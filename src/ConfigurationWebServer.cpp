@@ -41,6 +41,9 @@ static const char CONFIG_HTML[] PROGMEM = R"(
                 <label><span>OpenSky Client Secret:</span>
                     <input name="opensky-secret" value='%OPENSKY_SECRET%'>
                 </label>
+                <label><span>Known tails:</span>
+                    <input name="knowntails" type="text" value='%KNOWNTAILS%' placeholder="N12345, N67890">
+                </label>
                 <div class="row">
                     <label><span>Radar sweep:</span><input name="scanline" type="checkbox" %SCANLINE%></label>
                     <label><span>Aircraft info:</span><input name="infotext" type="checkbox" %INFOTEXT%></label>
@@ -75,6 +78,8 @@ void ConfigurationWebServer::ApplyDefaults() {
         prefs.putString("opensky-id", OPENSKY_CLIENT_ID);
     if (prefs.getString("opensky-secret", "").isEmpty() && strlen(OPENSKY_CLIENT_SECRET) > 0)
         prefs.putString("opensky-secret", OPENSKY_CLIENT_SECRET);
+    if (prefs.getString("knowntails", "").isEmpty())
+        prefs.putString("knowntails", "N80117, N2939J");
     if (prefs.getString("scanline", "").isEmpty())
         prefs.putString("scanline", "true");
     if (prefs.getString("infotext", "").isEmpty())
@@ -99,6 +104,7 @@ void ConfigurationWebServer::Initialise() {
         const String radius          = prefs.getString("radius", "0.5");
         const String openskyClientId = prefs.getString("opensky-id", "");
         String openskySecret         = prefs.getString("opensky-secret", "");
+        const String knownTails      = prefs.getString("knowntails", "");
         const String scanlineEnabled = prefs.getString("scanline", "true");
         const String infoTextEnabled = prefs.getString("infotext", "true");
         const String triangleEnabled = prefs.getString("triangle", "true");
@@ -109,13 +115,14 @@ void ConfigurationWebServer::Initialise() {
         AsyncWebServerResponse* response = request->beginResponse(
             200, "text/html",
             (const uint8_t*)CONFIG_HTML, sizeof(CONFIG_HTML) - 1,
-            [latitude, longitude, radius, openskyClientId, openskySecret, scanlineEnabled, infoTextEnabled, triangleEnabled]
+            [latitude, longitude, radius, openskyClientId, openskySecret, knownTails, scanlineEnabled, infoTextEnabled, triangleEnabled]
             (const String& var) -> String {
                 if (var == "LATITUDE")       return latitude;
                 if (var == "LONGITUDE")      return longitude;
                 if (var == "RADIUS")         return radius;
                 if (var == "OPENSKY_ID")     return openskyClientId;
                 if (var == "OPENSKY_SECRET") return openskySecret;
+                if (var == "KNOWNTAILS")     return knownTails;
                 if (var == "SCANLINE")       return scanlineEnabled == "true" ? "checked" : "";
                 if (var == "INFOTEXT")       return infoTextEnabled == "true" ? "checked" : "";
                 if (var == "TRIANGLE")       return triangleEnabled == "true" ? "checked" : "";
@@ -139,6 +146,7 @@ void ConfigurationWebServer::Initialise() {
         TrySaveParam("longitude");
         TrySaveParam("radius");
         TrySaveParam("opensky-id");
+        TrySaveParam("knowntails");
 
         const auto* param = request->getParam("opensky-secret", true);
         if (param != nullptr) {

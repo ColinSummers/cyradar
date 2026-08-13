@@ -3,9 +3,6 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 
-// CYD display: 320 wide × 240 tall (landscape)
-// Radar scope: 240×240 on the left
-// Sidebar: 80px on the right
 constexpr int DISPLAY_W = 320;
 constexpr int DISPLAY_H = 240;
 constexpr int RADAR_SIZE = 240;
@@ -13,6 +10,13 @@ constexpr int RADAR_CENTRE = RADAR_SIZE / 2 - 1;
 constexpr int RADAR_RADIUS = RADAR_SIZE / 2 - 1;
 constexpr int SIDEBAR_X = RADAR_SIZE;
 constexpr int SIDEBAR_W = DISPLAY_W - RADAR_SIZE;
+
+static const uint32_t GREEN_BRIGHT = lgfx::color888(0, 255, 0);
+static const uint32_t GREEN_MID    = lgfx::color888(0, 128, 0);
+static const uint32_t GREEN_DIM    = lgfx::color888(0, 80, 0);
+static const uint32_t GREEN_VDIM   = lgfx::color888(0, 60, 0);
+static const uint32_t YELLOW_BRIGHT = lgfx::color888(255, 220, 0);
+static const uint32_t YELLOW_MID    = lgfx::color888(180, 160, 0);
 
 void AircraftManager::Initialise()
 {
@@ -25,6 +29,25 @@ void AircraftManager::Initialise()
     if (!renderText.isEmpty()) displayInfoText = renderText == "true";
     if (!renderTris.isEmpty()) displayTriangles = renderTris == "true";
 
+    knownTails.clear();
+    String tails = configServer.GetStoredString("knowntails");
+    tails.trim();
+    while (tails.length() > 0) {
+        int sep = tails.indexOf(',');
+        String entry;
+        if (sep < 0) {
+            entry = tails;
+            tails = "";
+        } else {
+            entry = tails.substring(0, sep);
+            tails = tails.substring(sep + 1);
+        }
+        entry.trim();
+        entry.toUpperCase();
+        if (entry.length() > 0)
+            knownTails.push_back(entry);
+    }
+
     constexpr int MS_PER_DAY = 24 * 60 * 60 * 1000;
     constexpr int ANONYMOUS_TOKENS_PER_DAY = 400;
     constexpr int AUTHED_TOKENS_PER_DAY = 4000;
@@ -36,6 +59,22 @@ void AircraftManager::Initialise()
         dailyRequestBudget = AUTHED_TOKENS_PER_DAY - TOKEN_BUFFER;
 
     fetchInterval = MS_PER_DAY / dailyRequestBudget;
+}
+
+bool AircraftManager::IsKnownTail(const String& callsign, const String& icao) const
+{
+    String cs = callsign;
+    cs.trim();
+    cs.toUpperCase();
+    String ic = icao;
+    ic.toUpperCase();
+
+    for (const auto& tail : knownTails) {
+        if (tail.length() == 0) continue;
+        if (cs.indexOf(tail) >= 0 || ic.indexOf(tail) >= 0)
+            return true;
+    }
+    return false;
 }
 
 void AircraftManager::Update()
@@ -99,10 +138,8 @@ void AircraftManager::Draw(LGFX_Sprite& backbuffer)
     DrawCrosshairs(backbuffer);
     DrawSidebar(backbuffer);
 
-    int airborne = 0;
     for (auto& [icao, tracked] : trackedAircraft) {
         if (tracked.state.onGround) continue;
-        airborne++;
 
         tracked.Tick();
         auto [predLat, predLon] = tracked.GetDisplayPosition();
@@ -111,13 +148,15 @@ void AircraftManager::Draw(LGFX_Sprite& backbuffer)
         if (x < 0 || x >= RADAR_SIZE || y < 0 || y >= RADAR_SIZE)
             continue;
 
+        bool known = IsKnownTail(tracked.state.callsign, icao);
+
         if (displayInfoText)
-            DrawAircraftInfo(backbuffer, x, y, tracked);
+            DrawAircraftInfo(backbuffer, x, y, tracked, known);
 
         if (displayTriangles)
-            DrawAircraftTriangle(backbuffer, x, y, tracked);
+            DrawAircraftTriangle(backbuffer, x, y, tracked, known);
         else
-            backbuffer.fillCircle(x, y, 3, lgfx::color888(0, 255, 0));
+            backbuffer.fillCircle(x, y, 3, known ? YELLOW_BRIGHT : GREEN_BRIGHT);
     }
 }
 
@@ -151,19 +190,20 @@ void AircraftManager::DrawSidebar(LGFX_Sprite& backbuffer) const
     }
     backbuffer.drawString(String(airborne) + " ac", SIDEBAR_X + 4, 28);
 
-    backbuffer.setTextColor(lgfx::color888(0, 60, 0));
+    backbuffer.setTextColor(GREEN_VDIM);
     backbuffer.drawString(WiFi.localIP().toString(), SIDEBAR_X + 4, DISPLAY_H - 10);
 
     int yOff = 44;
-    backbuffer.setTextColor(lgfx::color888(0, 80, 0));
     for (auto& [icao, tracked] : trackedAircraft) {
         if (tracked.state.onGround) continue;
-        if (yOff > DISPLAY_H - 10) break;
+        if (yOff > DISPLAY_H - 20) break;
 
         String cs = tracked.state.callsign;
         cs.trim();
         if (cs.length() == 0) cs = icao;
 
+        bool known = IsKnownTail(tracked.state.callsign, icao);
+        backbuffer.setTextColor(known ? YELLOW_MID : GREEN_DIM);
         backbuffer.drawString(cs, SIDEBAR_X + 4, yOff);
         yOff += 10;
     }
@@ -183,12 +223,12 @@ std::pair<int, int> AircraftManager::ProjectCoordinateToScreen(float predLat, fl
     return { x, y };
 }
 
-void AircraftManager::DrawAircraftInfo(LGFX_Sprite& backbuffer, int x, int y, const TrackedAircraft& tracked) const
+void AircraftManager::DrawAircraftInfo(LGFX_Sprite& backbuffer, int x, int y, const TrackedAircraft& tracked, bool known) const
 {
     const int lineHeight = tft.fontHeight() + 1;
 
     backbuffer.setTextSize(1);
-    backbuffer.setTextColor(lgfx::color888(0, 128, 0));
+    backbuffer.setTextColor(known ? YELLOW_MID : GREEN_MID);
 
     String cs = tracked.state.callsign;
     cs.trim();
@@ -199,7 +239,7 @@ void AircraftManager::DrawAircraftInfo(LGFX_Sprite& backbuffer, int x, int y, co
     backbuffer.drawString(String(altFt) + "'", x + 5, y + 5 + lineHeight);
 }
 
-void AircraftManager::DrawAircraftTriangle(LGFX_Sprite& backbuffer, int x, int y, const TrackedAircraft& tracked) const
+void AircraftManager::DrawAircraftTriangle(LGFX_Sprite& backbuffer, int x, int y, const TrackedAircraft& tracked, bool known) const
 {
     const float dx = std::sin(radians(tracked.state.trueTrack));
     const float dy = -std::cos(radians(tracked.state.trueTrack));
@@ -216,5 +256,5 @@ void AircraftManager::DrawAircraftTriangle(LGFX_Sprite& backbuffer, int x, int y
     const float rightX = x - dx * TRIANGLE_LENGTH * 0.5f - px * TRIANGLE_WIDTH * 0.5f;
     const float rightY = y - dy * TRIANGLE_LENGTH * 0.5f - py * TRIANGLE_WIDTH * 0.5f;
 
-    backbuffer.fillTriangle(tipX, tipY, leftX, leftY, rightX, rightY, lgfx::color888(0, 255, 0));
+    backbuffer.fillTriangle(tipX, tipY, leftX, leftY, rightX, rightY, known ? YELLOW_BRIGHT : GREEN_BRIGHT);
 }

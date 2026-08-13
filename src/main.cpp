@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <WiFiManager.h>
+#include <ArduinoOTA.h>
 
 #include "Config.h"
 #include "LGFX.h"
@@ -28,12 +29,80 @@ OpenSkyAuthTokenHandler authHandler(http);
 
 AircraftManager aircraftManager(configServer, authHandler, http, tft);
 
+bool otaMode = false;
+bool otaConfirmShown = false;
+unsigned long otaConfirmTime = 0;
+unsigned long lastTouchTime = 0;
+
+void beginOTA()
+{
+    otaMode = true;
+
+    ArduinoOTA.setHostname("kfhr-radar");
+    ArduinoOTA.onStart([]() {
+        tft.fillScreen(lgfx::color888(0, 0, 0));
+        tft.setTextColor(lgfx::color888(0, 255, 0));
+        tft.drawCentreString("OTA Updating...", DISPLAY_W / 2, DISPLAY_H / 2 - 10);
+    });
+    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+        int pct = progress / (total / 100);
+        tft.fillRect(60, DISPLAY_H / 2 + 10, 200, 12, lgfx::color888(0, 0, 0));
+        tft.drawRect(60, DISPLAY_H / 2 + 10, 200, 12, lgfx::color888(0, 200, 0));
+        tft.fillRect(60, DISPLAY_H / 2 + 10, pct * 2, 12, lgfx::color888(0, 255, 0));
+    });
+    ArduinoOTA.onEnd([]() {
+        tft.fillScreen(lgfx::color888(0, 0, 0));
+        tft.drawCentreString("Update complete!", DISPLAY_W / 2, DISPLAY_H / 2);
+    });
+    ArduinoOTA.onError([](ota_error_t error) {
+        otaMode = false;
+        Serial.printf("[OTA] Error %u\n", error);
+    });
+    ArduinoOTA.begin();
+    Serial.println("[OTA] Listening for update...");
+}
+
+void handleTouch()
+{
+    lgfx::touch_point_t tp;
+    if (!tft.getTouch(&tp)) return;
+
+    unsigned long now = millis();
+    if (now - lastTouchTime < 500) return;
+    lastTouchTime = now;
+
+    if (otaConfirmShown && (now - otaConfirmTime < 5000)) {
+        otaConfirmShown = false;
+        beginOTA();
+
+        tft.fillScreen(lgfx::color888(0, 0, 0));
+        tft.setTextColor(lgfx::color888(0, 255, 0));
+        tft.drawCentreString("OTA Ready", DISPLAY_W / 2, DISPLAY_H / 2 - 20);
+        tft.drawCentreString("Upload from PlatformIO:", DISPLAY_W / 2, DISPLAY_H / 2);
+        tft.setTextColor(lgfx::color888(0, 160, 0));
+        String cmd = "pio run -t upload --upload-port " + WiFi.localIP().toString();
+        tft.drawCentreString(cmd, DISPLAY_W / 2, DISPLAY_H / 2 + 20);
+        tft.drawCentreString("Tap again to cancel", DISPLAY_W / 2, DISPLAY_H / 2 + 40);
+        return;
+    }
+
+    if (otaMode) {
+        otaMode = false;
+        otaConfirmShown = false;
+        Serial.println("[OTA] Cancelled by touch");
+        return;
+    }
+
+    otaConfirmShown = true;
+    otaConfirmTime = now;
+}
+
 void setup()
 {
     Serial.begin(115200);
 
     tft.init();
-    tft.setRotation(1); // landscape, USB port on left
+    tft.setRotation(1);
 
     backbuffer.setColorDepth(8);
     backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
@@ -66,6 +135,13 @@ void setup()
 
 void loop()
 {
+    handleTouch();
+
+    if (otaMode) {
+        ArduinoOTA.handle();
+        return;
+    }
+
     aircraftManager.Update();
 
     backbuffer.fillScreen(lgfx::color888(0, 0, 0));
@@ -82,5 +158,11 @@ void loop()
     }
 
     aircraftManager.Draw(backbuffer);
+
+    if (otaConfirmShown && (millis() - otaConfirmTime < 5000)) {
+        backbuffer.setTextColor(lgfx::color888(255, 220, 0));
+        backbuffer.drawCentreString("Tap again for OTA", DISPLAY_W / 2, DISPLAY_H - 14);
+    }
+
     backbuffer.pushSprite(0, 0);
 }
