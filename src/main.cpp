@@ -219,8 +219,8 @@ void loop()
         DrawScanLines(backbuffer,
             RADAR_CENTRE,
             RADAR_CENTRE,
-            RADAR_CENTRE + (std::cos(millis() / 3000.0f) * RADAR_CENTRE),
-            RADAR_CENTRE + (std::sin(millis() / 3000.0f) * RADAR_CENTRE),
+            RADAR_CENTRE + (std::cos(millis() / 3000.0f) * (RADAR_CENTRE + 4)),
+            RADAR_CENTRE + (std::sin(millis() / 3000.0f) * (RADAR_CENTRE + 4)),
             20, 128, 5
         );
     }

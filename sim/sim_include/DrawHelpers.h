@@ -1,6 +1,6 @@
 #pragma once
 
-#include "LGFX.h"
+#include <LovyanGFX.hpp>
 
 void DrawScanLines(LGFX_Sprite& buf, const int x0, const int y0, const int x1, const int y1, const int thickness, const int trailBrightness, const int spacing)
 {
