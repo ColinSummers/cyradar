@@ -1,0 +1,14 @@
+#pragma once
+
+// Wi-Fi credentials — leave blank to use the WiFiManager captive portal
+#define WIFI_SSID ""
+#define WIFI_PASS ""
+
+// OpenSky Network API credentials (from opensky-network.org)
+#define OPENSKY_CLIENT_ID ""
+#define OPENSKY_CLIENT_SECRET ""
+
+// Radar centre — KFHR (Friday Harbor Airport, San Juan Island, WA)
+#define DEFAULT_LATITUDE  48.5220
+#define DEFAULT_LONGITUDE -123.0244
+#define DEFAULT_RADIUS    0.5
