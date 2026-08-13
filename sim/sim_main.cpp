@@ -38,7 +38,7 @@ public:
 static double sim_lat = 48.5220;
 static double sim_lon = -123.0244;
 static double sim_rad = 0.3;
-static std::vector<String> knownTails = { "N80117", "N2939J" };
+static std::vector<String> knownTails = { "N80117", "N2939J", "N9766Z", "N87KA" };
 static std::map<String, TrackedAircraft> trackedAircraft;
 
 constexpr int DISPLAY_W = 320;
@@ -47,6 +47,7 @@ constexpr int RADAR_SIZE = 240;
 constexpr int RADAR_CENTRE = RADAR_SIZE / 2 - 1;
 constexpr int RADAR_RADIUS = RADAR_SIZE / 2 - 1;
 constexpr int SIDEBAR_X = RADAR_SIZE;
+constexpr float MAX_ALT_METERS = 2438.4f; // 8000 ft
 
 static const uint32_t GREEN_BRIGHT  = lgfx::color888(0, 255, 0);
 static const uint32_t GREEN_MID     = lgfx::color888(0, 128, 0);
@@ -154,6 +155,7 @@ void loadMockData(const char* path) {
         a.spi           = toBool(fields[15]);
         a.positionSource = (int)toFloat(fields[16]);
 
+        if (a.baroAltitude > MAX_ALT_METERS) continue;
         trackedAircraft.emplace(a.icao24, TrackedAircraft{ a, now });
     }
 

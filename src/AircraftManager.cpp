@@ -10,6 +10,7 @@ constexpr int RADAR_CENTRE = RADAR_SIZE / 2 - 1;
 constexpr int RADAR_RADIUS = RADAR_SIZE / 2 - 1;
 constexpr int SIDEBAR_X = RADAR_SIZE;
 constexpr int SIDEBAR_W = DISPLAY_W - RADAR_SIZE;
+constexpr float MAX_ALT_METERS = 2438.4f; // 8000 ft
 
 static const uint32_t GREEN_BRIGHT = lgfx::color888(0, 255, 0);
 static const uint32_t GREEN_MID    = lgfx::color888(0, 128, 0);
@@ -115,6 +116,7 @@ void AircraftManager::Update()
         now = millis();
 
         for (auto& ac : aircraft) {
+            if (ac.baroAltitude > MAX_ALT_METERS) continue;
             auto it = trackedAircraft.find(ac.icao24);
             if (it == trackedAircraft.end())
                 trackedAircraft.emplace(ac.icao24, TrackedAircraft{ ac, now });
@@ -123,8 +125,9 @@ void AircraftManager::Update()
         }
 
         for (auto it = trackedAircraft.begin(); it != trackedAircraft.end(); ) {
-            bool aircraftPresent = std::any_of(aircraft.begin(), aircraft.end(), [&](const Aircraft& ac) { return ac.icao24 == it->first; });
-            if (!aircraftPresent)
+            bool keep = std::any_of(aircraft.begin(), aircraft.end(),
+                [&](const Aircraft& ac) { return ac.icao24 == it->first && ac.baroAltitude <= MAX_ALT_METERS; });
+            if (!keep)
                 it = trackedAircraft.erase(it);
             else
                 ++it;
