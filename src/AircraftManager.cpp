@@ -1,6 +1,7 @@
 #include "AircraftManager.h"
 
 #include <ArduinoJson.h>
+#include <WiFi.h>
 
 // CYD display: 320 wide × 240 tall (landscape)
 // Radar scope: 240×240 on the left
@@ -149,6 +150,9 @@ void AircraftManager::DrawSidebar(LGFX_Sprite& backbuffer) const
         if (!tracked.state.onGround) airborne++;
     }
     backbuffer.drawString(String(airborne) + " ac", SIDEBAR_X + 4, 28);
+
+    backbuffer.setTextColor(lgfx::color888(0, 60, 0));
+    backbuffer.drawString(WiFi.localIP().toString(), SIDEBAR_X + 4, DISPLAY_H - 10);
 
     int yOff = 44;
     backbuffer.setTextColor(lgfx::color888(0, 80, 0));

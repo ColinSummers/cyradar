@@ -52,10 +52,13 @@ void setup()
 
     wm.autoConnect(WiFiManagerHelpers::WiFiManagerName);
 
+    Serial.print("[INFO] WiFi connected, IP: ");
+    Serial.println(WiFi.localIP());
+
     tft.fillScreen(lgfx::color888(0, 0, 0));
     tft.drawCentreString("WiFi connected!", DISPLAY_W / 2, DISPLAY_H / 2 - 10);
     tft.drawCentreString(WiFi.localIP().toString(), DISPLAY_W / 2, DISPLAY_H / 2 + 10);
-    delay(1500);
+    delay(2500);
 
     configServer.Initialise();
     aircraftManager.Initialise();
