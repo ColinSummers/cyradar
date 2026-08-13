@@ -46,9 +46,9 @@ const String OpenSkyAuthTokenHandler::GetValidToken(const String& clientId, cons
     if (clientId.isEmpty() || clientSecret.isEmpty())
         return "";
 
-    if (bearerToken.isEmpty() || millis() > tokenExpiry) {
+    if (bearerToken.isEmpty() || (millis() - tokenFetchedAt) >= TOKEN_TTL) {
         bearerToken = FetchBearerToken(url, clientId, clientSecret);
-        tokenExpiry = millis() + (29 * 60 * 1000);
+        tokenFetchedAt = millis();
     }
 
     return bearerToken;

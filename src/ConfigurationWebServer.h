@@ -9,8 +9,10 @@ private:
     Preferences prefs;
 
 public:
-    ConfigurationWebServer() : server(80), prefs() {}
-    ConfigurationWebServer(int port) : server(port), prefs() {}
+    bool shouldRestart = false;
+    unsigned long restartAt = 0;
+
+    ConfigurationWebServer(int port = 80) : server(port), prefs() {}
 
     void Initialise();
     void ApplyDefaults();

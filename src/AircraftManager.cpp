@@ -1,16 +1,8 @@
 #include "AircraftManager.h"
+#include "RadarLayout.h"
 
 #include <ArduinoJson.h>
 #include <WiFi.h>
-
-constexpr int DISPLAY_W = 320;
-constexpr int DISPLAY_H = 240;
-constexpr int RADAR_SIZE = 240;
-constexpr int RADAR_CENTRE = RADAR_SIZE / 2 - 1;
-constexpr int RADAR_RADIUS = RADAR_SIZE / 2 - 1;
-constexpr int SIDEBAR_X = RADAR_SIZE;
-constexpr int SIDEBAR_W = DISPLAY_W - RADAR_SIZE;
-constexpr float MAX_ALT_METERS = 2438.4f; // 8000 ft
 
 static const uint32_t GREEN_BRIGHT = lgfx::color888(0, 255, 0);
 static const uint32_t GREEN_MID    = lgfx::color888(0, 128, 0);
@@ -111,7 +103,10 @@ void AircraftManager::Update()
         }
 
         JsonDocument doc;
-        deserializeJson(doc, result.response);
+        if (deserializeJson(doc, result.response)) {
+            Serial.println("[WARN] Failed to parse OpenSky response");
+            return;
+        }
         auto aircraft = JsonParser::ParseArray<Aircraft>(doc["states"]);
         now = millis();
 
@@ -230,7 +225,7 @@ std::pair<int, int> AircraftManager::ProjectCoordinateToScreen(float predLat, fl
 void AircraftManager::DrawAircraftInfo(LGFX_Sprite& backbuffer, int x, int y, const TrackedAircraft& tracked, bool known) const
 {
     backbuffer.setTextSize(1.5);
-    int lineHeight = (int)(tft.fontHeight() * 1.5f) + 2;
+    int lineHeight = (int)(backbuffer.fontHeight()) + 2;
 
     backbuffer.setTextColor(known ? YELLOW_MID : GREEN_MID);
 

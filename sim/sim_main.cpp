@@ -41,13 +41,8 @@ static double sim_rad = 0.3;
 static std::vector<String> knownTails = { "N80117", "N2939J", "N9766Z", "N87KA" };
 static std::map<String, TrackedAircraft> trackedAircraft;
 
-constexpr int DISPLAY_W = 320;
-constexpr int DISPLAY_H = 240;
-constexpr int RADAR_SIZE = 240;
-constexpr int RADAR_CENTRE = RADAR_SIZE / 2 - 1;
-constexpr int RADAR_RADIUS = RADAR_SIZE / 2 - 1;
-constexpr int SIDEBAR_X = RADAR_SIZE;
-constexpr float MAX_ALT_METERS = 2438.4f; // 8000 ft
+// Shared with firmware
+#include "RadarLayout.h"
 
 static const uint32_t GREEN_BRIGHT  = lgfx::color888(0, 255, 0);
 static const uint32_t GREEN_MID     = lgfx::color888(0, 128, 0);
@@ -252,6 +247,7 @@ void drawFrame() {
 int simLoop(bool* running) {
     while (*running) {
         drawFrame();
+        delay(16);
     }
     return 0;
 }

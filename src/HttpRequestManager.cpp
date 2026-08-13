@@ -36,17 +36,19 @@ HttpResult HttpRequestManager::Get(const String& url, const std::vector<std::pai
     int responseCode = http.GET();
     result.statusCode = responseCode;
 
-    if (responseCode > 0) {
+    if (responseCode >= 200 && responseCode < 300) {
         result.success = true;
         result.response = http.getString();
     }
     else {
         result.success = false;
-        result.errorMessage = http.errorToString(responseCode);
-        Serial.print("[GET] HTTP Error (");
-        Serial.print(responseCode);
-        Serial.print("): ");
-        Serial.println(result.errorMessage);
+        if (responseCode > 0) {
+            result.errorMessage = String(responseCode);
+            result.response = http.getString();
+        } else {
+            result.errorMessage = http.errorToString(responseCode);
+        }
+        Serial.printf("[GET] HTTP Error %d: %s\n", responseCode, result.errorMessage.c_str());
     }
 
     http.end();
@@ -66,17 +68,19 @@ HttpResult HttpRequestManager::Post(const String& url, const String& body, const
     int responseCode = http.POST(body);
     result.statusCode = responseCode;
 
-    if (responseCode > 0) {
+    if (responseCode >= 200 && responseCode < 300) {
         result.success = true;
         result.response = http.getString();
     }
     else {
         result.success = false;
-        result.errorMessage = http.errorToString(responseCode);
-        Serial.print("[POST] HTTP Error (");
-        Serial.print(responseCode);
-        Serial.print("): ");
-        Serial.println(result.errorMessage);
+        if (responseCode > 0) {
+            result.errorMessage = String(responseCode);
+            result.response = http.getString();
+        } else {
+            result.errorMessage = http.errorToString(responseCode);
+        }
+        Serial.printf("[POST] HTTP Error %d: %s\n", responseCode, result.errorMessage.c_str());
     }
 
     http.end();

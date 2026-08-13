@@ -162,7 +162,8 @@ void ConfigurationWebServer::Initialise() {
         prefs.end();
 
         request->send(200, "text/html", "Saved - restarting...");
-        ESP.restart();
+        shouldRestart = true;
+        restartAt = millis() + 500;
     });
 
     server.begin();

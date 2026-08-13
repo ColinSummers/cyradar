@@ -6,7 +6,7 @@
 #include "models/TrackedAircraft.h"
 #include "ConfigurationWebServer.h"
 #include "OpenSkyAuthTokenHandler.h"
-#include "LGFX.h"
+#include <LovyanGFX.hpp>
 
 class AircraftManager
 {
@@ -26,7 +26,6 @@ private:
     ConfigurationWebServer& configServer;
     OpenSkyAuthTokenHandler& authHandler;
     HttpRequestManager& http;
-    LGFX& tft;
 
     bool IsKnownTail(const String& callsign, const String& icao) const;
     void DrawRadarCircles(LGFX_Sprite& backbuffer) const;
@@ -37,8 +36,8 @@ private:
     void DrawAircraftTriangle(LGFX_Sprite& backbuffer, int x, int y, const TrackedAircraft& tracked, bool known) const;
 
 public:
-    AircraftManager(ConfigurationWebServer& config, OpenSkyAuthTokenHandler& auth, HttpRequestManager& httpManager, LGFX& tftGfx)
-        : configServer(config), authHandler(auth), http(httpManager), tft(tftGfx)
+    AircraftManager(ConfigurationWebServer& config, OpenSkyAuthTokenHandler& auth, HttpRequestManager& httpManager)
+        : configServer(config), authHandler(auth), http(httpManager)
     {
     }
     ~AircraftManager() = default;

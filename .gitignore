@@ -3,4 +3,3 @@
 .DS_Store
 include/Config.h
 sim/build/
-sim/font_stubs.c

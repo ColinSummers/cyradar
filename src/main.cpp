@@ -6,6 +6,7 @@
 #include <HTTPUpdate.h>
 
 #include "Config.h"
+#include "RadarLayout.h"
 #include "LGFX.h"
 #include "WiFiManagerHelpers.h"
 #include "ConfigurationWebServer.h"
@@ -15,11 +16,6 @@
 #include "DrawHelpers.h"
 #include "models/Aircraft.h"
 #include "models/TrackedAircraft.h"
-
-constexpr int DISPLAY_W = 320;
-constexpr int DISPLAY_H = 240;
-constexpr int RADAR_SIZE = 240;
-constexpr int RADAR_CENTRE = RADAR_SIZE / 2 - 1;
 
 constexpr unsigned long OTA_CHECK_INTERVAL = 24UL * 60 * 60 * 1000;
 
@@ -31,13 +27,14 @@ ConfigurationWebServer configServer;
 HttpRequestManager http;
 OpenSkyAuthTokenHandler authHandler(http);
 
-AircraftManager aircraftManager(configServer, authHandler, http, tft);
+AircraftManager aircraftManager(configServer, authHandler, http);
 
 bool otaMode = false;
 bool otaConfirmShown = false;
 unsigned long otaConfirmTime = 0;
 unsigned long lastTouchTime = 0;
 unsigned long lastOtaCheck = 0;
+bool renderScanlines = true;
 
 void showOtaStatus(const char* msg)
 {
@@ -192,6 +189,9 @@ void setup()
     configServer.Initialise();
     aircraftManager.Initialise();
 
+    String scanlinePref = configServer.GetStoredString("scanline");
+    renderScanlines = scanlinePref.isEmpty() || scanlinePref == "true";
+
     checkHttpOta();
     lastOtaCheck = millis();
 }
@@ -205,6 +205,9 @@ void loop()
         return;
     }
 
+    if (configServer.shouldRestart && millis() >= configServer.restartAt)
+        ESP.restart();
+
     if (millis() - lastOtaCheck >= OTA_CHECK_INTERVAL) {
         lastOtaCheck = millis();
         checkHttpOta();
@@ -214,8 +217,7 @@ void loop()
 
     backbuffer.fillScreen(lgfx::color888(0, 0, 0));
 
-    String renderScanlines = configServer.GetStoredString("scanline");
-    if (renderScanlines.isEmpty() || renderScanlines == "true") {
+    if (renderScanlines) {
         DrawScanLines(backbuffer,
             RADAR_CENTRE,
             RADAR_CENTRE,

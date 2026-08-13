@@ -10,20 +10,20 @@ struct Aircraft {
     String icao24;
     String callsign;
     String originCountry;
-    long   timePosition;
-    long   lastContact;
-    float  longitude;
-    float  latitude;
-    float  baroAltitude;
-    bool   onGround;
-    float  velocity;
-    float  trueTrack;
-    float  verticalRate;
-    float  geoAltitude;
+    long   timePosition = 0;
+    long   lastContact = 0;
+    float  longitude = 0;
+    float  latitude = 0;
+    float  baroAltitude = 0;
+    bool   onGround = false;
+    float  velocity = 0;
+    float  trueTrack = 0;
+    float  verticalRate = 0;
+    float  geoAltitude = 0;
     String squawk;
-    bool   spi;
-    int    positionSource;
-    int    category;
+    bool   spi = false;
+    int    positionSource = 0;
+    int    category = 0;
 };
 
 namespace JsonParser {
