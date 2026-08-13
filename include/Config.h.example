@@ -15,5 +15,5 @@
 
 // Firmware version — bump on each release; the ESP32 checks the server daily
 #define FW_VERSION "1.1.0"
-#define FW_VERSION_URL "http://george.pogsummers.com/kfhr-radar/version.txt"
-#define FW_BINARY_URL  "http://george.pogsummers.com/kfhr-radar/firmware.bin"
+#define FW_VERSION_URL "https://george.pogsummers.com/kfhr-radar/version.txt"
+#define FW_BINARY_URL  "https://george.pogsummers.com/kfhr-radar/firmware.bin"

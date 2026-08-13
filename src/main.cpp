@@ -4,6 +4,7 @@
 #include <ArduinoOTA.h>
 #include <HTTPClient.h>
 #include <HTTPUpdate.h>
+#include <WiFiClientSecure.h>
 
 #include "Config.h"
 #include "RadarLayout.h"
@@ -46,45 +47,49 @@ void showOtaStatus(const char* msg)
 
 bool checkHttpOta()
 {
-    Serial.println("[OTA] Checking for update...");
+    backbuffer.deleteSprite();
+    Serial.printf("[OTA] Checking for update... (heap: %u)\n", ESP.getFreeHeap());
+
+    bool updated = false;
+
+    WiFiClientSecure secureClient;
+    secureClient.setInsecure();
 
     HTTPClient client;
-    client.begin(FW_VERSION_URL);
+    client.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+    client.begin(secureClient, FW_VERSION_URL);
     int code = client.GET();
-    if (code != 200) {
+
+    if (code == 200) {
+        String remoteVersion = client.getString();
+        remoteVersion.trim();
+        client.end();
+
+        Serial.printf("[OTA] Local: %s  Remote: %s\n", FW_VERSION, remoteVersion.c_str());
+
+        if (remoteVersion != FW_VERSION) {
+            showOtaStatus("Updating firmware...");
+
+            WiFiClientSecure transport;
+            transport.setInsecure();
+            httpUpdate.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+            t_httpUpdate_return ret = httpUpdate.update(transport, FW_BINARY_URL);
+
+            if (ret == HTTP_UPDATE_OK) {
+                Serial.println("[OTA] Update success, rebooting");
+                ESP.restart();
+            } else if (ret == HTTP_UPDATE_FAILED) {
+                Serial.printf("[OTA] Update failed: %s\n", httpUpdate.getLastErrorString().c_str());
+            }
+        }
+    } else {
         Serial.printf("[OTA] Version check failed: %d\n", code);
         client.end();
-        return false;
     }
 
-    String remoteVersion = client.getString();
-    remoteVersion.trim();
-    client.end();
-
-    Serial.printf("[OTA] Local: %s  Remote: %s\n", FW_VERSION, remoteVersion.c_str());
-
-    if (remoteVersion == FW_VERSION)
-        return false;
-
-    showOtaStatus("Updating firmware...");
-
-    WiFiClient transport;
-    httpUpdate.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
-    t_httpUpdate_return ret = httpUpdate.update(transport, FW_BINARY_URL);
-
-    switch (ret) {
-        case HTTP_UPDATE_OK:
-            Serial.println("[OTA] Update success, rebooting");
-            ESP.restart();
-            break;
-        case HTTP_UPDATE_FAILED:
-            Serial.printf("[OTA] Update failed: %s\n", httpUpdate.getLastErrorString().c_str());
-            break;
-        case HTTP_UPDATE_NO_UPDATES:
-            Serial.println("[OTA] No update needed");
-            break;
-    }
-    return ret == HTTP_UPDATE_OK;
+    backbuffer.setColorDepth(8);
+    backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
+    return updated;
 }
 
 void beginArduinoOta()
