@@ -177,23 +177,24 @@ void AircraftManager::DrawSidebar(LGFX_Sprite& backbuffer) const
 {
     backbuffer.drawFastVLine(SIDEBAR_X, 0, DISPLAY_H, lgfx::color888(0, 64, 0));
 
-    backbuffer.setTextSize(1);
+    backbuffer.setTextSize(1.5);
     backbuffer.setTextColor(lgfx::color888(0, 200, 0));
-    backbuffer.drawString("KFHR", SIDEBAR_X + 4, 4);
+    backbuffer.drawString("KFHR", SIDEBAR_X + 4, 3);
 
+    backbuffer.setTextSize(1);
     backbuffer.setTextColor(lgfx::color888(0, 100, 0));
-    backbuffer.drawString(String(rad, 1) + "d", SIDEBAR_X + 4, 16);
+    backbuffer.drawString(String(rad, 1) + "d", SIDEBAR_X + 4, 18);
 
     int airborne = 0;
     for (auto& [icao, tracked] : trackedAircraft) {
         if (!tracked.state.onGround) airborne++;
     }
-    backbuffer.drawString(String(airborne) + " ac", SIDEBAR_X + 4, 28);
+    backbuffer.drawString(String(airborne) + " ac", SIDEBAR_X + 4, 30);
 
     backbuffer.setTextColor(GREEN_VDIM);
     backbuffer.drawString(WiFi.localIP().toString(), SIDEBAR_X + 4, DISPLAY_H - 10);
 
-    int yOff = 44;
+    int yOff = 46;
     for (auto& [icao, tracked] : trackedAircraft) {
         if (tracked.state.onGround) continue;
         if (yOff > DISPLAY_H - 20) break;
@@ -225,18 +226,19 @@ std::pair<int, int> AircraftManager::ProjectCoordinateToScreen(float predLat, fl
 
 void AircraftManager::DrawAircraftInfo(LGFX_Sprite& backbuffer, int x, int y, const TrackedAircraft& tracked, bool known) const
 {
-    const int lineHeight = tft.fontHeight() + 1;
+    backbuffer.setTextSize(1.5);
+    int lineHeight = (int)(tft.fontHeight() * 1.5f) + 2;
 
-    backbuffer.setTextSize(1);
     backbuffer.setTextColor(known ? YELLOW_MID : GREEN_MID);
 
     String cs = tracked.state.callsign;
     cs.trim();
     if (cs.length() > 0)
-        backbuffer.drawString(cs, x + 5, y + 5);
+        backbuffer.drawString(cs, x + 7, y + 7);
 
     int altFt = (int)(tracked.state.baroAltitude * 3.28084f);
-    backbuffer.drawString(String(altFt) + "'", x + 5, y + 5 + lineHeight);
+    backbuffer.drawString(String(altFt) + "'", x + 7, y + 7 + lineHeight);
+    backbuffer.setTextSize(1);
 }
 
 void AircraftManager::DrawAircraftTriangle(LGFX_Sprite& backbuffer, int x, int y, const TrackedAircraft& tracked, bool known) const
@@ -246,8 +248,8 @@ void AircraftManager::DrawAircraftTriangle(LGFX_Sprite& backbuffer, int x, int y
     const float px = -dy;
     const float py = dx;
 
-    constexpr float TRIANGLE_LENGTH = 6.0f;
-    constexpr float TRIANGLE_WIDTH = 3.0f;
+    constexpr float TRIANGLE_LENGTH = 8.0f;
+    constexpr float TRIANGLE_WIDTH = 4.0f;
 
     const float tipX = x + dx * TRIANGLE_LENGTH;
     const float tipY = y + dy * TRIANGLE_LENGTH;

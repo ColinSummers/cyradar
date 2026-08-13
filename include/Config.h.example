@@ -11,4 +11,9 @@
 // Radar centre — KFHR (Friday Harbor Airport, San Juan Island, WA)
 #define DEFAULT_LATITUDE  48.5220
 #define DEFAULT_LONGITUDE -123.0244
-#define DEFAULT_RADIUS    0.5
+#define DEFAULT_RADIUS    0.3
+
+// Firmware version — bump on each release; the ESP32 checks the server daily
+#define FW_VERSION "1.1.0"
+#define FW_VERSION_URL "http://george.pogsummers.com/kfhr-radar/version.txt"
+#define FW_BINARY_URL  "http://george.pogsummers.com/kfhr-radar/firmware.bin"
