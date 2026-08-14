@@ -4,11 +4,11 @@
 
 namespace WiFiManagerHelpers
 {
-    constexpr const char* WiFiManagerName = "KFHR-Radar-Setup";
+    constexpr const char* WiFiManagerName = "CheapYellowRadarWiFi";
 
     static void ConfigureWiFiManager(WiFiManager& wm, LGFX& tft)
     {
-        wm.setTitle("KFHR Radar - Setup WiFi");
+        wm.setTitle("CYRadar - Setup WiFi");
         wm.setCustomHeadElement("<style>body{background:#111;color:#00ff00;font-family:monospace;} div:has(> a){background:#00ff00;} a:hover{color:#111;}</style>");
 
         wm.setAPCallback([&tft](WiFiManager* wifiManager) {

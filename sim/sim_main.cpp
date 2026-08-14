@@ -13,7 +13,6 @@
 #include <map>
 #include <fstream>
 #include <sstream>
-#include <curl/curl.h>
 
 class LGFX : public lgfx::LGFX_Device {
     lgfx::Panel_sdl _panel;
@@ -37,7 +36,7 @@ public:
 #include "Overlays.h"
 #include "RadarLayout.h"
 #include "WeatherData.h"
-#include "WeatherParse.h"
+#include "WeatherFetch.h"
 #include "WeatherScreens.h"
 
 static constexpr float MAX_ALT_METERS = 2438.4f;
@@ -69,59 +68,6 @@ static unsigned long modeStartTime = 0;
 static WxData wxData;
 static const char* tafTopRow[4] = {"KFHR", "KNUW", "KPAE", "KBFI"};
 static const char* tafBotRow[4] = {"KBVS", "KBLI", "KORS", "KCLM"};
-
-// ---- curl helper ----
-static size_t curlWriteCb(void* data, size_t size, size_t nmemb, std::string* out) {
-    out->append((char*)data, size * nmemb);
-    return size * nmemb;
-}
-
-static std::string fetchUrl(const std::string& url) {
-    CURL* curl = curl_easy_init();
-    if (!curl) return "";
-    std::string response;
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCb);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    CURLcode res = curl_easy_perform(curl);
-    curl_easy_cleanup(curl);
-    if (res != CURLE_OK) {
-        printf("curl error: %s\n", curl_easy_strerror(res));
-        return "";
-    }
-    return response;
-}
-
-static void fetchWeather() {
-    const char* metarStations = "KFHR,KNUW,KPAE,KBFI,KBVS,KBLI,KORS,KCLM";
-    const char* tafStations = "KFHR,KNUW,KPAE,KBFI,KBVS,KBLI,KORS,KCLM";
-
-    printf("Fetching METARs...\n");
-    std::string metarUrl = std::string("https://aviationweather.gov/api/data/metar?ids=") + metarStations + "&format=json";
-    std::string metarJson = fetchUrl(metarUrl);
-    if (!metarJson.empty()) {
-        wxparse::parseMETARs(metarJson.c_str(), wxData);
-        printf("Loaded %d METARs\n", wxData.metarCount);
-        for (int i = 0; i < wxData.metarCount; i++)
-            printf("  %s: %s  wind %03d/%d  vis %.0f\n",
-                   wxData.metars[i].icao, wxData.metars[i].flightCat,
-                   wxData.metars[i].windDir, wxData.metars[i].windSpd,
-                   wxData.metars[i].visibility);
-    }
-
-    printf("Fetching TAFs...\n");
-    std::string tafUrl = std::string("https://aviationweather.gov/api/data/taf?ids=") + tafStations + "&format=json";
-    std::string tafJson = fetchUrl(tafUrl);
-    wxparse::parseTAFs(tafJson.empty() ? "[]" : tafJson.c_str(), wxData,
-                       "KFHR KNUW KPAE KBFI KBVS KBLI KORS KCLM");
-    printf("Loaded %d TAFs\n", wxData.tafCount);
-    for (int i = 0; i < wxData.tafCount; i++)
-        printf("  %s: %d periods\n", wxData.tafs[i].icao, wxData.tafs[i].periodCount);
-
-    wxData.fetchTime = millis();
-}
 
 // ---- Aircraft helpers ----
 bool isKnownTail(const String& callsign, const String& icao) {
@@ -410,9 +356,10 @@ int main(int argc, char** argv) {
     loadMockData(dataPath);
 
     memset(&wxData, 0, sizeof(wxData));
-    curl_global_init(CURL_GLOBAL_DEFAULT);
-    fetchWeather();
-    curl_global_cleanup();
+    httpfetch::globalInit();
+    wxfetch::fetchAll(wxData, "KFHR KNUW KPAE KBFI KBVS KBLI KORS KCLM",
+                              "KFHR KNUW KPAE KBFI KBVS KBLI KORS KCLM", millis());
+    httpfetch::globalCleanup();
 
     lgfx::Panel_sdl::main(simLoop, 16);
     return 0;

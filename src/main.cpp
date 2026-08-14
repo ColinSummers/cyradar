@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <WiFiManager.h>
-#include <HTTPClient.h>
 #include <HTTPUpdate.h>
 #include <WiFiClientSecure.h>
 
@@ -16,7 +15,7 @@
 #include "AircraftManager.h"
 #include "DrawHelpers.h"
 #include "WeatherData.h"
-#include "WeatherParse.h"
+#include "WeatherFetch.h"
 #include "WeatherScreens.h"
 #include "models/Aircraft.h"
 #include "models/TrackedAircraft.h"
@@ -49,33 +48,6 @@ static const char* tafBotRow[4];
 static char metarIds[128];
 static char tafIds[128];
 
-// ---- Weather fetch ----
-static String wxFetchUrl(const char* url) {
-    HTTPClient client;
-    client.begin(url);
-    client.setTimeout(15000);
-    int code = client.GET();
-    String body;
-    if (code == 200) body = client.getString();
-    else Serial.printf("[WX] Fetch failed: %d %s\n", code, url);
-    client.end();
-    return body;
-}
-
-static void buildStationUrl(char* url, int maxLen, const char* endpoint, const char* ids) {
-    char encoded[128];
-    int j = 0;
-    for (int i = 0; ids[i] && j < (int)sizeof(encoded) - 1; i++) {
-        if (ids[i] == ' ') {
-            if (j > 0 && encoded[j-1] != ',') encoded[j++] = ',';
-        } else {
-            encoded[j++] = ids[i];
-        }
-    }
-    encoded[j] = '\0';
-    snprintf(url, maxLen, "https://aviationweather.gov/api/data/%s?ids=%s&format=json", endpoint, encoded);
-}
-
 static void fetchWeather() {
     String metarStations = configServer.GetStoredString("metars");
     String tafStations = configServer.GetStoredString("tafs");
@@ -85,7 +57,6 @@ static void fetchWeather() {
     strncpy(metarIds, metarStations.c_str(), sizeof(metarIds) - 1);
     strncpy(tafIds, tafStations.c_str(), sizeof(tafIds) - 1);
 
-    // Parse TAF station list into top/bot row arrays
     static char tafIdsCopy[128];
     strncpy(tafIdsCopy, tafIds, sizeof(tafIdsCopy) - 1);
     static char* tafStationPtrs[8] = {};
@@ -96,23 +67,7 @@ static void fetchWeather() {
     for (int i = 0; i < 4; i++) tafTopRow[i] = tafStationPtrs[i];
     for (int i = 0; i < 4; i++) tafBotRow[i] = tafStationPtrs[4 + i];
 
-    char url[256];
-
-    Serial.println("[WX] Fetching METARs...");
-    buildStationUrl(url, sizeof(url), "metar", metarIds);
-    String metarJson = wxFetchUrl(url);
-    if (metarJson.length() > 0) {
-        wxparse::parseMETARs(metarJson.c_str(), wxData);
-        Serial.printf("[WX] Loaded %d METARs\n", wxData.metarCount);
-    }
-
-    Serial.println("[WX] Fetching TAFs...");
-    buildStationUrl(url, sizeof(url), "taf", tafIds);
-    String tafJson = wxFetchUrl(url);
-    wxparse::parseTAFs(tafJson.length() > 0 ? tafJson.c_str() : "[]", wxData, tafIds);
-    Serial.printf("[WX] Loaded %d TAFs\n", wxData.tafCount);
-
-    wxData.fetchTime = millis();
+    wxfetch::fetchAll(wxData, metarIds, tafIds, millis());
     lastWxFetch = millis();
 }
 
@@ -248,7 +203,7 @@ void setup()
     tft.fillScreen(lgfx::color888(0, 0, 0));
     tft.setTextSize(1.5);
     tft.setTextColor(lgfx::color888(0, 255, 0));
-    tft.drawCentreString("KFHR Radar", DISPLAY_W / 2, DISPLAY_H / 2 - 16);
+    tft.drawCentreString("CYRadar", DISPLAY_W / 2, DISPLAY_H / 2 - 16);
     tft.setTextSize(1);
     tft.drawCentreString("Connecting to WiFi...", DISPLAY_W / 2, DISPLAY_H / 2 + 8);
 
