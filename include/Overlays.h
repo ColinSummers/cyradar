@@ -91,11 +91,11 @@ constexpr GeoPoint SAN_JUAN_COASTLINE[] = {
 };
 constexpr int SAN_JUAN_COASTLINE_COUNT = sizeof(SAN_JUAN_COASTLINE) / sizeof(SAN_JUAN_COASTLINE[0]);
 
-// KFHR Runway 16/34 — true heading ~175°, length 3400 ft
-constexpr GeoPoint RUNWAY_NORTH = {48.5266f, -123.0250f};  // threshold 34
-constexpr GeoPoint RUNWAY_SOUTH = {48.5174f, -123.0238f};  // threshold 16
-constexpr float RWY16_TRUE_HDG = 175.0f;  // mag 160 + 15°E declination
-constexpr float RWY34_TRUE_HDG = 355.0f;
+struct RunwayInfo {
+    char id[8];
+    float heading1, heading2;
+    float lat1, lon1, lat2, lon2;
+};
 
 // Weather stations along FHR→BFI route and return-flight outs
 struct MetarStation {

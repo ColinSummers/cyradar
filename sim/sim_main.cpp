@@ -56,7 +56,7 @@ static const uint32_t YELLOW_BRIGHT = lgfx::color888(255, 220, 0);
 static const uint32_t YELLOW_MID    = lgfx::color888(180, 160, 0);
 
 // ---- Display modes ----
-enum DisplayMode { MODE_RADAR, MODE_METAR_DETAIL, MODE_WEATHER_MAP };
+enum DisplayMode { MODE_RADAR, MODE_METAR_DETAIL, MODE_WEATHER_MAP, MODE_TAF_MAP };
 static DisplayMode displayMode = MODE_RADAR;
 static unsigned long modeStartTime = 0;
 static unsigned long mockMetarFetchTime = 0;
@@ -91,8 +91,34 @@ static SimMetar mockMetars[] = {
      "KBLI 140056Z 19012G18KT 10SM SCT040 20/13 A3010 RMK AO2"},
     {"KORS", 220, 5, 0, 10.0f, "Few at 4000'", 19.0f, 12.0f, 30.11f, "VFR",
      "KORS 140056Z AUTO 22005KT 10SM FEW040 19/12 A3011 RMK AO2"},
+    {"KCLM", 250, 7, 0, 10.0f, "Clear", 20.0f, 11.0f, 30.10f, "VFR",
+     "KCLM 140056Z AUTO 25007KT 10SM CLR 20/11 A3010 RMK AO2"},
 };
 static const int MOCK_METAR_COUNT = sizeof(mockMetars) / sizeof(mockMetars[0]);
+
+// ---- Mock TAF data (based on real aviationweather.gov TAFs) ----
+struct SimTafPeriod {
+    const char* flightCat;
+    const char* label;
+};
+
+struct SimTaf {
+    const char* icao;
+    SimTafPeriod periods[8];
+    int periodCount;
+};
+
+static SimTaf mockTafs[] = {
+    {"KFHR", {}, 0},
+    {"KNUW", {{"VFR","12a"},{"IFR","1a"},{"LIFR","T"},{"VFR","11a"}}, 4},
+    {"KPAE", {{"VFR","11p"},{"LIFR","5a"},{"VFR","9a"},{"VFR","4p"},{"VFR","8p"}}, 5},
+    {"KBFI", {{"VFR","11p"},{"MVFR","6a"},{"IFR","7a"},{"VFR","10a"},{"VFR","8p"}}, 5},
+    {"KBVS", {}, 0},
+    {"KBLI", {{"VFR","11p"},{"VFR","6a"},{"VFR","10a"}}, 3},
+    {"KORS", {}, 0},
+    {"KCLM", {{"LIFR","11p"},{"MVFR","9a"},{"VFR","1p"},{"VFR","5p"}}, 4},
+};
+static const int MOCK_TAF_COUNT = sizeof(mockTafs) / sizeof(mockTafs[0]);
 
 static uint32_t flightCatColor(const char* cat) {
     if (strcmp(cat, "VFR") == 0)  return lgfx::color888(0, 220, 0);
@@ -474,14 +500,91 @@ void drawWeatherMap() {
     backbuffer.pushSprite(0, 0);
 }
 
+// ---- TAF grid ----
+// Top row: FHR NUW PAE BFI (dots above)
+// Bot row: BVS BLI ORS CLM (dots below)
+static const char* TAF_TOP_ROW[] = {"KFHR", "KNUW", "KPAE", "KBFI"};
+static const char* TAF_BOT_ROW[] = {"KBVS", "KBLI", "KORS", "KCLM"};
+
+void drawTafMap() {
+    backbuffer.fillScreen(0);
+
+    const int cols = 4;
+    const int colW = 72;
+    const int gridW = cols * colW;
+    const int xOff = (DISPLAY_W - gridW) / 2;
+
+    const int topRowY = 110;
+    const int botRowY = 126;
+    const int dotR = 4;
+    const int dotSpacing = 12;
+
+    backbuffer.setTextSize(1);
+
+    auto findTaf = [](const char* icao) -> const SimTaf* {
+        for (int j = 0; j < MOCK_TAF_COUNT; j++)
+            if (strcmp(mockTafs[j].icao, icao) == 0) return &mockTafs[j];
+        return nullptr;
+    };
+
+    auto findMetarCat = [](const char* icao) -> const char* {
+        for (int j = 0; j < MOCK_METAR_COUNT; j++)
+            if (strcmp(mockMetars[j].icao, icao) == 0) return mockMetars[j].flightCat;
+        return "???";
+    };
+
+    // Find the longest TAF among the rightmost column (BFI top, CLM bottom)
+    // to draw time labels after dots
+    auto drawColumn = [&](int cx, const char* icao, int anchorY, int dir, bool showLabels) {
+        const SimTaf* taf = findTaf(icao);
+        if (taf && taf->periodCount > 0) {
+            for (int p = 0; p < taf->periodCount; p++) {
+                int dy = anchorY + dir * (p * dotSpacing);
+                backbuffer.fillCircle(cx, dy, dotR, flightCatColor(taf->periods[p].flightCat));
+                if (strcmp(taf->periods[p].label, "T") == 0)
+                    backbuffer.drawCircle(cx, dy, dotR + 1, lgfx::color888(120, 120, 120));
+                if (showLabels) {
+                    backbuffer.setTextColor(lgfx::color888(0, 80, 0));
+                    backbuffer.drawString(taf->periods[p].label, cx + dotR + 4, dy - 4);
+                }
+            }
+        } else {
+            backbuffer.fillCircle(cx, anchorY, dotR, flightCatColor(findMetarCat(icao)));
+        }
+    };
+
+    for (int c = 0; c < cols; c++) {
+        int cx = xOff + c * colW + colW / 2;
+        bool isLast = (c == cols - 1);
+
+        backbuffer.setTextColor(lgfx::color888(0, 160, 0));
+        backbuffer.drawCentreString(TAF_TOP_ROW[c] + 1, cx, topRowY);
+        drawColumn(cx, TAF_TOP_ROW[c], topRowY - 10, -1, isLast);
+
+        backbuffer.setTextColor(lgfx::color888(0, 160, 0));
+        backbuffer.drawCentreString(TAF_BOT_ROW[c] + 1, cx, botRowY);
+        drawColumn(cx, TAF_BOT_ROW[c], botRowY + 14, 1, isLast);
+    }
+
+    int ageMin = (int)((millis() - mockMetarFetchTime) / 60000);
+    char buf[32];
+    snprintf(buf, sizeof(buf), "TAF  %d min ago", ageMin);
+    backbuffer.setTextColor(lgfx::color888(0, 60, 0));
+    backbuffer.drawString(buf, 4, DISPLAY_H - 10);
+
+    backbuffer.pushSprite(0, 0);
+}
+
 // ---- Frame dispatcher ----
 void drawFrame() {
-    if (displayMode != MODE_RADAR && millis() - modeStartTime > 15000)
+    unsigned long timeout = (displayMode == MODE_TAF_MAP) ? 20000 : 15000;
+    if (displayMode != MODE_RADAR && millis() - modeStartTime > timeout)
         displayMode = MODE_RADAR;
 
     switch (displayMode) {
         case MODE_METAR_DETAIL: drawMetarDetail(); break;
         case MODE_WEATHER_MAP:  drawWeatherMap();  break;
+        case MODE_TAF_MAP:      drawTafMap();      break;
         default:                drawRadarFrame();  break;
     }
 }
@@ -499,6 +602,16 @@ void handleSimTouch() {
             printf("Firmware update check requested\n");
         }
         displayMode = MODE_RADAR;
+        return;
+    }
+    if (displayMode == MODE_WEATHER_MAP) {
+        if (tp.x >= DISPLAY_W / 2 && tp.y >= DISPLAY_H / 2) {
+            displayMode = MODE_TAF_MAP;
+            modeStartTime = millis();
+            printf("TAF map\n");
+        } else {
+            displayMode = MODE_RADAR;
+        }
         return;
     }
     if (displayMode != MODE_RADAR) {

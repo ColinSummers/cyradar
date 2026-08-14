@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "models/TrackedAircraft.h"
+#include "Overlays.h"
 #include "ConfigurationWebServer.h"
 #include "OpenSkyAuthTokenHandler.h"
 #include <LovyanGFX.hpp>
@@ -15,6 +16,8 @@ private:
     double lon = 0.0;
     double rad = 0.5;
     double displayRad = 0.5;
+    String airportId;
+    std::vector<RunwayInfo> runways;
     std::map<String, TrackedAircraft> trackedAircraft;
     std::vector<String> knownTails;
 
@@ -51,4 +54,6 @@ public:
     float GetSweepAngle() const;
     void SetDiameterNm(double nm);
     double GetDiameterNm() const;
+    const String& GetAirportId() const { return airportId; }
+    const std::vector<RunwayInfo>& GetRunways() const { return runways; }
 };

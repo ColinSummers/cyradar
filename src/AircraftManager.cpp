@@ -1,6 +1,5 @@
 #include "AircraftManager.h"
 #include "RadarLayout.h"
-#include "Overlays.h"
 
 #include <ArduinoJson.h>
 #include <WiFi.h>
@@ -14,6 +13,9 @@ static const uint32_t YELLOW_MID    = lgfx::color888(180, 160, 0);
 
 void AircraftManager::Initialise()
 {
+    airportId = configServer.GetStoredString("airport");
+    if (airportId.isEmpty()) airportId = "KFHR";
+
     lat = configServer.GetStoredString("latitude").toDouble();
     lon = configServer.GetStoredString("longitude").toDouble();
     double diameterNm = configServer.GetStoredString("diameter").toDouble();
@@ -25,6 +27,25 @@ void AircraftManager::Initialise()
     const String renderTris = configServer.GetStoredString("triangle");
     if (!renderText.isEmpty()) displayInfoText = renderText == "true";
     if (!renderTris.isEmpty()) displayTriangles = renderTris == "true";
+
+    runways.clear();
+    String rwyJson = configServer.GetStoredString("runways");
+    if (!rwyJson.isEmpty()) {
+        JsonDocument doc;
+        if (!deserializeJson(doc, rwyJson) && doc.is<JsonArray>()) {
+            for (JsonObject rwy : doc.as<JsonArray>()) {
+                RunwayInfo ri = {};
+                strlcpy(ri.id, rwy["id"] | "", sizeof(ri.id));
+                ri.heading1 = rwy["h1"] | 0.0f;
+                ri.heading2 = rwy["h2"] | 0.0f;
+                ri.lat1 = rwy["lat1"] | 0.0f;
+                ri.lon1 = rwy["lon1"] | 0.0f;
+                ri.lat2 = rwy["lat2"] | 0.0f;
+                ri.lon2 = rwy["lon2"] | 0.0f;
+                runways.push_back(ri);
+            }
+        }
+    }
 
     knownTails.clear();
     String tails = configServer.GetStoredString("knowntails");
@@ -185,7 +206,7 @@ void AircraftManager::DrawSidebar(LGFX_Sprite& backbuffer) const
 
     backbuffer.setTextSize(1.5);
     backbuffer.setTextColor(lgfx::color888(0, 200, 0));
-    backbuffer.drawString("KFHR", SIDEBAR_X + 4, 3);
+    backbuffer.drawString(airportId.c_str(), SIDEBAR_X + 4, 3);
 
     backbuffer.setTextSize(1);
     backbuffer.setTextColor(lgfx::color888(0, 100, 0));
@@ -245,11 +266,13 @@ void AircraftManager::DrawCoastline(LGFX_Sprite& backbuffer) const
 void AircraftManager::DrawRunway(LGFX_Sprite& backbuffer) const
 {
     const uint32_t rwyColor = lgfx::color888(50, 100, 200);
-    auto [x1, y1] = ProjectCoordinateToScreen(RUNWAY_NORTH.lat, RUNWAY_NORTH.lon);
-    auto [x2, y2] = ProjectCoordinateToScreen(RUNWAY_SOUTH.lat, RUNWAY_SOUTH.lon);
-    backbuffer.drawLine(x1, y1, x2, y2, rwyColor);
-    backbuffer.drawLine(x1 - 1, y1, x2 - 1, y2, rwyColor);
-    backbuffer.drawLine(x1 + 1, y1, x2 + 1, y2, rwyColor);
+    for (const auto& rwy : runways) {
+        auto [x1, y1] = ProjectCoordinateToScreen(rwy.lat1, rwy.lon1);
+        auto [x2, y2] = ProjectCoordinateToScreen(rwy.lat2, rwy.lon2);
+        backbuffer.drawLine(x1, y1, x2, y2, rwyColor);
+        backbuffer.drawLine(x1 - 1, y1, x2 - 1, y2, rwyColor);
+        backbuffer.drawLine(x1 + 1, y1, x2 + 1, y2, rwyColor);
+    }
 }
 
 void AircraftManager::DrawAircraftInfo(LGFX_Sprite& backbuffer, int x, int y, const TrackedAircraft& tracked, bool known) const
