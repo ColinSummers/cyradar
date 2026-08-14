@@ -1,5 +1,6 @@
 #include "AircraftManager.h"
 #include "RadarLayout.h"
+#include "Overlays.h"
 
 #include <ArduinoJson.h>
 #include <WiFi.h>
@@ -15,7 +16,10 @@ void AircraftManager::Initialise()
 {
     lat = configServer.GetStoredString("latitude").toDouble();
     lon = configServer.GetStoredString("longitude").toDouble();
-    rad = configServer.GetStoredString("radius").toDouble();
+    double diameterNm = configServer.GetStoredString("diameter").toDouble();
+    if (diameterNm <= 0) diameterNm = 8;
+    rad = diameterNm / 120.0;
+    displayRad = rad;
 
     const String renderText = configServer.GetStoredString("infotext");
     const String renderTris = configServer.GetStoredString("triangle");
@@ -85,13 +89,15 @@ void AircraftManager::Update()
         std::vector<std::pair<String, String>> headers = {};
         if (!token.isEmpty()) headers.push_back({ "Authorization", "Bearer " + token });
 
+        float lonRad = rad / cos(lat * M_PI / 180.0);
+
         HttpResult result = http.Get(
             "https://opensky-network.org/api/states/all",
             {
               {"lamin", String(lat - rad)},
               {"lamax", String(lat + rad)},
-              {"lomin", String(lon - rad)},
-              {"lomax", String(lon + rad)}
+              {"lomin", String(lon - lonRad)},
+              {"lomax", String(lon + lonRad)}
             },
             headers
         );
@@ -134,6 +140,8 @@ void AircraftManager::Draw(LGFX_Sprite& backbuffer)
 {
     DrawRadarCircles(backbuffer);
     DrawCrosshairs(backbuffer);
+    DrawCoastline(backbuffer);
+    DrawRunway(backbuffer);
     DrawSidebar(backbuffer);
 
     for (auto& [icao, tracked] : trackedAircraft) {
@@ -181,7 +189,8 @@ void AircraftManager::DrawSidebar(LGFX_Sprite& backbuffer) const
 
     backbuffer.setTextSize(1);
     backbuffer.setTextColor(lgfx::color888(0, 100, 0));
-    backbuffer.drawString(String(rad, 1) + "d", SIDEBAR_X + 4, 18);
+    int diamNm = (int)(displayRad * 120.0 + 0.5);
+    backbuffer.drawString(String(diamNm) + "nm", SIDEBAR_X + 4, 18);
 
     int airborne = 0;
     for (auto& [icao, tracked] : trackedAircraft) {
@@ -210,16 +219,37 @@ void AircraftManager::DrawSidebar(LGFX_Sprite& backbuffer) const
 
 std::pair<int, int> AircraftManager::ProjectCoordinateToScreen(float predLat, float predLon) const
 {
-    const float dLon = predLon - lon;
+    const float cosLat = cosf(lat * M_PI / 180.0f);
+    const float dLon = (predLon - lon) * cosLat;
     const float dLat = predLat - lat;
 
-    const float normLon = (dLon + rad) / (2.0f * rad);
-    const float normLat = (dLat + rad) / (2.0f * rad);
+    const float normLon = (dLon + displayRad) / (2.0f * displayRad);
+    const float normLat = (dLat + displayRad) / (2.0f * displayRad);
 
     const int x = static_cast<int>(normLon * RADAR_SIZE);
     const int y = static_cast<int>(RADAR_SIZE - (normLat * RADAR_SIZE));
 
     return { x, y };
+}
+
+void AircraftManager::DrawCoastline(LGFX_Sprite& backbuffer) const
+{
+    const uint32_t coastColor = lgfx::color888(40, 80, 120);
+    for (int i = 0; i < SAN_JUAN_COASTLINE_COUNT - 1; i++) {
+        auto [x1, y1] = ProjectCoordinateToScreen(SAN_JUAN_COASTLINE[i].lat, SAN_JUAN_COASTLINE[i].lon);
+        auto [x2, y2] = ProjectCoordinateToScreen(SAN_JUAN_COASTLINE[i + 1].lat, SAN_JUAN_COASTLINE[i + 1].lon);
+        backbuffer.drawLine(x1, y1, x2, y2, coastColor);
+    }
+}
+
+void AircraftManager::DrawRunway(LGFX_Sprite& backbuffer) const
+{
+    const uint32_t rwyColor = lgfx::color888(50, 100, 200);
+    auto [x1, y1] = ProjectCoordinateToScreen(RUNWAY_NORTH.lat, RUNWAY_NORTH.lon);
+    auto [x2, y2] = ProjectCoordinateToScreen(RUNWAY_SOUTH.lat, RUNWAY_SOUTH.lon);
+    backbuffer.drawLine(x1, y1, x2, y2, rwyColor);
+    backbuffer.drawLine(x1 - 1, y1, x2 - 1, y2, rwyColor);
+    backbuffer.drawLine(x1 + 1, y1, x2 + 1, y2, rwyColor);
 }
 
 void AircraftManager::DrawAircraftInfo(LGFX_Sprite& backbuffer, int x, int y, const TrackedAircraft& tracked, bool known) const
@@ -257,4 +287,19 @@ void AircraftManager::DrawAircraftTriangle(LGFX_Sprite& backbuffer, int x, int y
     const float rightY = y - dy * TRIANGLE_LENGTH * 0.5f - py * TRIANGLE_WIDTH * 0.5f;
 
     backbuffer.fillTriangle(tipX, tipY, leftX, leftY, rightX, rightY, known ? YELLOW_BRIGHT : GREEN_BRIGHT);
+}
+
+float AircraftManager::GetSweepAngle() const
+{
+    float t = (float)(millis() - lastFetch) / (float)fetchInterval;
+    if (t > 1.0f) t = fmodf(t, 1.0f);
+    return -M_PI_2 + t * 2.0f * M_PI;
+}
+
+void AircraftManager::SetDiameterNm(double nm) {
+    displayRad = nm / 120.0;
+}
+
+double AircraftManager::GetDiameterNm() const {
+    return displayRad * 120.0;
 }

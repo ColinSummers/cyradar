@@ -14,6 +14,7 @@ private:
     double lat = 0.0;
     double lon = 0.0;
     double rad = 0.5;
+    double displayRad = 0.5;
     std::map<String, TrackedAircraft> trackedAircraft;
     std::vector<String> knownTails;
 
@@ -30,6 +31,8 @@ private:
     bool IsKnownTail(const String& callsign, const String& icao) const;
     void DrawRadarCircles(LGFX_Sprite& backbuffer) const;
     void DrawCrosshairs(LGFX_Sprite& backbuffer) const;
+    void DrawCoastline(LGFX_Sprite& backbuffer) const;
+    void DrawRunway(LGFX_Sprite& backbuffer) const;
     void DrawSidebar(LGFX_Sprite& backbuffer) const;
     std::pair<int, int> ProjectCoordinateToScreen(float predLat, float predLon) const;
     void DrawAircraftInfo(LGFX_Sprite& backbuffer, int x, int y, const TrackedAircraft& tracked, bool known) const;
@@ -45,4 +48,7 @@ public:
     void Initialise();
     void Update();
     void Draw(LGFX_Sprite& backbuffer);
+    float GetSweepAngle() const;
+    void SetDiameterNm(double nm);
+    double GetDiameterNm() const;
 };

@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <WiFiManager.h>
-#include <ArduinoOTA.h>
 #include <HTTPClient.h>
 #include <HTTPUpdate.h>
 #include <WiFiClientSecure.h>
@@ -30,9 +29,6 @@ OpenSkyAuthTokenHandler authHandler(http);
 
 AircraftManager aircraftManager(configServer, authHandler, http);
 
-bool otaMode = false;
-bool otaConfirmShown = false;
-unsigned long otaConfirmTime = 0;
 unsigned long lastTouchTime = 0;
 unsigned long lastOtaCheck = 0;
 bool renderScanlines = true;
@@ -47,6 +43,7 @@ void showOtaStatus(const char* msg)
 
 bool checkHttpOta()
 {
+    showOtaStatus("Checking for updates...");
     backbuffer.deleteSprite();
     Serial.printf("[OTA] Checking for update... (heap: %u)\n", ESP.getFreeHeap());
 
@@ -54,8 +51,11 @@ bool checkHttpOta()
 
     WiFiClientSecure secureClient;
     secureClient.setInsecure();
+    secureClient.setTimeout(10);
 
     HTTPClient client;
+    client.setConnectTimeout(10000);
+    client.setTimeout(10000);
     client.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
     client.begin(secureClient, FW_VERSION_URL);
     int code = client.GET();
@@ -92,31 +92,6 @@ bool checkHttpOta()
     return updated;
 }
 
-void beginArduinoOta()
-{
-    otaMode = true;
-
-    ArduinoOTA.setHostname("kfhr-radar");
-    ArduinoOTA.onStart([]() {
-        showOtaStatus("OTA Updating...");
-    });
-    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-        int pct = progress / (total / 100);
-        tft.fillRect(60, DISPLAY_H / 2 + 20, 200, 12, lgfx::color888(0, 0, 0));
-        tft.drawRect(60, DISPLAY_H / 2 + 20, 200, 12, lgfx::color888(0, 200, 0));
-        tft.fillRect(60, DISPLAY_H / 2 + 20, pct * 2, 12, lgfx::color888(0, 255, 0));
-    });
-    ArduinoOTA.onEnd([]() {
-        showOtaStatus("Update complete!");
-    });
-    ArduinoOTA.onError([](ota_error_t error) {
-        otaMode = false;
-        Serial.printf("[OTA] Error %u\n", error);
-    });
-    ArduinoOTA.begin();
-    Serial.println("[OTA] ArduinoOTA listening...");
-}
-
 void handleTouch()
 {
     lgfx::touch_point_t tp;
@@ -126,32 +101,25 @@ void handleTouch()
     if (now - lastTouchTime < 500) return;
     lastTouchTime = now;
 
-    if (otaConfirmShown && (now - otaConfirmTime < 5000)) {
-        otaConfirmShown = false;
-        beginArduinoOta();
+    if (tp.x >= RADAR_SIZE) return;
 
-        tft.fillScreen(lgfx::color888(0, 0, 0));
-        tft.setTextSize(1.5);
-        tft.setTextColor(lgfx::color888(0, 255, 0));
-        tft.drawCentreString("OTA Ready", DISPLAY_W / 2, DISPLAY_H / 2 - 30);
-        tft.setTextSize(1);
-        tft.setTextColor(lgfx::color888(0, 160, 0));
-        tft.drawCentreString("Upload from PlatformIO:", DISPLAY_W / 2, DISPLAY_H / 2);
-        String cmd = "pio run -t upload --upload-port " + WiFi.localIP().toString();
-        tft.drawCentreString(cmd, DISPLAY_W / 2, DISPLAY_H / 2 + 14);
-        tft.drawCentreString("Tap to cancel", DISPLAY_W / 2, DISPLAY_H / 2 + 36);
-        return;
+    if (tp.x < RADAR_SIZE / 2 && tp.y < RADAR_SIZE / 2) {
+        double d = aircraftManager.GetDiameterNm();
+        d *= 2.0 / 3.0;
+        if (d < 2) d = 2;
+        aircraftManager.SetDiameterNm(d);
+        Serial.printf("[TOUCH] Zoom in -> %.1f nm\n", d);
+    } else if (tp.x >= RADAR_SIZE / 2 && tp.y < RADAR_SIZE / 2) {
+        Serial.println("[TOUCH] METAR detail (not yet implemented)");
+    } else if (tp.x < RADAR_SIZE / 2 && tp.y >= RADAR_SIZE / 2) {
+        double d = aircraftManager.GetDiameterNm();
+        d *= 3.0 / 2.0;
+        if (d > 50) d = 50;
+        aircraftManager.SetDiameterNm(d);
+        Serial.printf("[TOUCH] Zoom out -> %.1f nm\n", d);
+    } else {
+        Serial.println("[TOUCH] Weather map (not yet implemented)");
     }
-
-    if (otaMode) {
-        otaMode = false;
-        otaConfirmShown = false;
-        Serial.println("[OTA] Cancelled by touch");
-        return;
-    }
-
-    otaConfirmShown = true;
-    otaConfirmTime = now;
 }
 
 void setup()
@@ -197,18 +165,12 @@ void setup()
     String scanlinePref = configServer.GetStoredString("scanline");
     renderScanlines = scanlinePref.isEmpty() || scanlinePref == "true";
 
-    checkHttpOta();
     lastOtaCheck = millis();
 }
 
 void loop()
 {
     handleTouch();
-
-    if (otaMode) {
-        ArduinoOTA.handle();
-        return;
-    }
 
     if (configServer.shouldRestart && millis() >= configServer.restartAt)
         ESP.restart();
@@ -223,23 +185,17 @@ void loop()
     backbuffer.fillScreen(lgfx::color888(0, 0, 0));
 
     if (renderScanlines) {
+        float sweepAngle = aircraftManager.GetSweepAngle();
         DrawScanLines(backbuffer,
             RADAR_CENTRE,
             RADAR_CENTRE,
-            RADAR_CENTRE + (std::cos(millis() / 3000.0f) * (RADAR_CENTRE + 4)),
-            RADAR_CENTRE + (std::sin(millis() / 3000.0f) * (RADAR_CENTRE + 4)),
+            RADAR_CENTRE + (std::cos(sweepAngle) * (RADAR_CENTRE + 4)),
+            RADAR_CENTRE + (std::sin(sweepAngle) * (RADAR_CENTRE + 4)),
             20, 128, 5
         );
     }
 
     aircraftManager.Draw(backbuffer);
-
-    if (otaConfirmShown && (millis() - otaConfirmTime < 5000)) {
-        backbuffer.setTextSize(1.5);
-        backbuffer.setTextColor(lgfx::color888(255, 220, 0));
-        backbuffer.drawCentreString("Tap again for OTA", DISPLAY_W / 2, DISPLAY_H - 18);
-        backbuffer.setTextSize(1);
-    }
 
     backbuffer.pushSprite(0, 0);
 }
