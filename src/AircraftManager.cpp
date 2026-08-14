@@ -102,63 +102,50 @@ bool AircraftManager::IsKnownTail(const String& callsign, const String& icao) co
 
 void AircraftManager::Update()
 {
+    lastFetch = millis();
+
+    const String token = authHandler.GetValidToken(
+        configServer.GetStoredString("opensky-id"),
+        configServer.GetStoredString("opensky-secret")
+    );
+
+    std::vector<std::pair<String, String>> headers = {};
+    if (!token.isEmpty()) headers.push_back({ "Authorization", "Bearer " + token });
+
+    float lonRad = rad / cos(lat * M_PI / 180.0);
+
+    JsonDocument doc;
+    if (!http.GetJson(
+        "https://opensky-network.org/api/states/all",
+        doc,
+        {
+          {"lamin", String(lat - rad)},
+          {"lamax", String(lat + rad)},
+          {"lomin", String(lon - lonRad)},
+          {"lomax", String(lon + lonRad)}
+        },
+        headers
+    )) return;
+
     unsigned long now = millis();
+    auto aircraft = JsonParser::ParseArray<Aircraft>(doc["states"]);
 
-    if (now - lastFetch >= fetchInterval) {
-        lastFetch = now;
+    for (auto& ac : aircraft) {
+        if (ac.baroAltitude > maxAltMeters) continue;
+        auto it = trackedAircraft.find(ac.icao24);
+        if (it == trackedAircraft.end())
+            trackedAircraft.emplace(ac.icao24, TrackedAircraft{ ac, now });
+        else
+            it->second.Update(ac, now);
+    }
 
-        const String token = authHandler.GetValidToken(
-            configServer.GetStoredString("opensky-id"),
-            configServer.GetStoredString("opensky-secret")
-        );
-
-        std::vector<std::pair<String, String>> headers = {};
-        if (!token.isEmpty()) headers.push_back({ "Authorization", "Bearer " + token });
-
-        float lonRad = rad / cos(lat * M_PI / 180.0);
-
-        HttpResult result = http.Get(
-            "https://opensky-network.org/api/states/all",
-            {
-              {"lamin", String(lat - rad)},
-              {"lamax", String(lat + rad)},
-              {"lomin", String(lon - lonRad)},
-              {"lomax", String(lon + lonRad)}
-            },
-            headers
-        );
-
-        if (!result.success) {
-            Serial.print("[WARN] OpenSky API request failed: ");
-            Serial.println(result.errorMessage);
-            return;
-        }
-
-        JsonDocument doc;
-        if (deserializeJson(doc, result.response)) {
-            Serial.println("[WARN] Failed to parse OpenSky response");
-            return;
-        }
-        auto aircraft = JsonParser::ParseArray<Aircraft>(doc["states"]);
-        now = millis();
-
-        for (auto& ac : aircraft) {
-            if (ac.baroAltitude > maxAltMeters) continue;
-            auto it = trackedAircraft.find(ac.icao24);
-            if (it == trackedAircraft.end())
-                trackedAircraft.emplace(ac.icao24, TrackedAircraft{ ac, now });
-            else
-                it->second.Update(ac, now);
-        }
-
-        for (auto it = trackedAircraft.begin(); it != trackedAircraft.end(); ) {
-            bool keep = std::any_of(aircraft.begin(), aircraft.end(),
-                [&](const Aircraft& ac) { return ac.icao24 == it->first && ac.baroAltitude <= maxAltMeters; });
-            if (!keep)
-                it = trackedAircraft.erase(it);
-            else
-                ++it;
-        }
+    for (auto it = trackedAircraft.begin(); it != trackedAircraft.end(); ) {
+        bool keep = std::any_of(aircraft.begin(), aircraft.end(),
+            [&](const Aircraft& ac) { return ac.icao24 == it->first && ac.baroAltitude <= maxAltMeters; });
+        if (!keep)
+            it = trackedAircraft.erase(it);
+        else
+            ++it;
     }
 }
 

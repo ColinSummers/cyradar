@@ -50,6 +50,7 @@ public:
     ~AircraftManager() = default;
 
     void Initialise();
+    bool NeedsFetch() const { return millis() - lastFetch >= fetchInterval; }
     void Update();
     void Draw(LGFX_Sprite& backbuffer);
     float GetSweepAngle() const;

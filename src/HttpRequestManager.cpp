@@ -27,7 +27,7 @@ HttpResult HttpRequestManager::Get(const String& url, const std::vector<std::pai
     const String queryParams = BuildQueryString(params);
     const String fullUrl = url + queryParams;
 
-    http.begin(fullUrl);
+    http.begin(secureClient, fullUrl);
 
     for (const auto& header : headers) {
         http.addHeader(header.first, header.second);
@@ -59,7 +59,7 @@ HttpResult HttpRequestManager::Post(const String& url, const String& body, const
 {
     HttpResult result{ false, 0, "", "" };
 
-    http.begin(url);
+    http.begin(secureClient, url);
 
     for (const auto& header : headers) {
         http.addHeader(header.first, header.second);
@@ -85,4 +85,33 @@ HttpResult HttpRequestManager::Post(const String& url, const String& body, const
 
     http.end();
     return result;
+}
+
+bool HttpRequestManager::GetJson(const String& url, JsonDocument& doc, const std::vector<std::pair<String, String>>& params, const std::vector<std::pair<String, String>>& headers) {
+    const String queryParams = BuildQueryString(params);
+    const String fullUrl = url + queryParams;
+
+    http.begin(secureClient, fullUrl);
+
+    for (const auto& header : headers) {
+        http.addHeader(header.first, header.second);
+    }
+
+    int code = http.GET();
+    bool ok = false;
+
+    if (code >= 200 && code < 300) {
+        DeserializationError err = deserializeJson(doc, http.getStream());
+        if (err)
+            Serial.printf("[GET] JSON parse failed: %s\n", err.c_str());
+        else
+            ok = true;
+    } else if (code > 0) {
+        Serial.printf("[GET] HTTP Error: %d\n", code);
+    } else {
+        Serial.printf("[GET] Connection failed: %s\n", http.errorToString(code).c_str());
+    }
+
+    http.end();
+    return ok;
 }

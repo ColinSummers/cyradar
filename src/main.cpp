@@ -313,7 +313,13 @@ void setup()
 
 void drawRadarFrame()
 {
-    aircraftManager.Update();
+    if (aircraftManager.NeedsFetch()) {
+        backbuffer.deleteSprite();
+        aircraftManager.Update();
+        backbuffer.setColorDepth(8);
+        if (!backbuffer.createSprite(DISPLAY_W, DISPLAY_H))
+            Serial.printf("[WARN] createSprite failed, heap: %u\n", ESP.getFreeHeap());
+    }
 
     backbuffer.fillScreen(lgfx::color888(0, 0, 0));
 
