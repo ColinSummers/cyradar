@@ -44,9 +44,10 @@ static inline std::string get(const char* url) {
     HTTPClient client;
     WiFiClientSecure secureClient;
     secureClient.setInsecure();
+    secureClient.setTimeout(10);
     Serial.printf("[HTTP] GET %s\n", url);
     client.begin(secureClient, url);
-    client.setTimeout(15000);
+    client.setTimeout(10000);
     client.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
     int code = client.GET();
     Serial.printf("[HTTP] Response: %d\n", code);

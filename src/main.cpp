@@ -4,6 +4,8 @@
 #include <HTTPUpdate.h>
 #include <WiFiClientSecure.h>
 
+#include <Preferences.h>
+
 #include "Config.h"
 #include "RadarLayout.h"
 #include "Overlays.h"
@@ -48,7 +50,21 @@ static const char* tafBotRow[4];
 static char metarIds[128];
 static char tafIds[128];
 
-static void fetchWeather() {
+static void checkin() {
+    String airport = configServer.GetStoredString("airport");
+    String user = configServer.GetStoredString("opensky-id");
+    if (airport.isEmpty()) airport = "KFHR";
+    if (user.isEmpty()) user = WiFi.macAddress();
+
+    char url[256];
+    snprintf(url, sizeof(url),
+             "https://george.pogsummers.com/cyradar/checkin?v=%s&airport=%s&user=%s",
+             FW_VERSION, airport.c_str(), user.c_str());
+    Serial.printf("[CHECKIN] %s\n", url);
+    httpfetch::get(url);
+}
+
+static void setupStationLists() {
     String metarStations = configServer.GetStoredString("metars");
     String tafStations = configServer.GetStoredString("tafs");
     if (metarStations.isEmpty()) metarStations = "KFHR KNUW KPAE KBFI KBVS KBLI KORS";
@@ -66,11 +82,43 @@ static void fetchWeather() {
     while (n < 8) tafStationPtrs[n++] = (char*)"";
     for (int i = 0; i < 4; i++) tafTopRow[i] = tafStationPtrs[i];
     for (int i = 0; i < 4; i++) tafBotRow[i] = tafStationPtrs[4 + i];
+}
 
+static void wxCacheSave() {
+    Preferences prefs;
+    prefs.begin("wxcache", false);
+    prefs.putInt("mc", wxData.metarCount);
+    prefs.putInt("tc", wxData.tafCount);
+    prefs.putBytes("metars", wxData.metars, sizeof(WxMetar) * wxData.metarCount);
+    prefs.putBytes("tafs", wxData.tafs, sizeof(WxTaf) * wxData.tafCount);
+    prefs.end();
+    Serial.printf("[WX] Cached %d METARs, %d TAFs\n", wxData.metarCount, wxData.tafCount);
+}
+
+static bool wxCacheLoad() {
+    Preferences prefs;
+    prefs.begin("wxcache", true);
+    int mc = prefs.getInt("mc", 0);
+    int tc = prefs.getInt("tc", 0);
+    if (mc <= 0 && tc <= 0) { prefs.end(); return false; }
+
+    memset(&wxData, 0, sizeof(wxData));
+    wxData.metarCount = mc;
+    wxData.tafCount = tc;
+    prefs.getBytes("metars", wxData.metars, sizeof(WxMetar) * mc);
+    prefs.getBytes("tafs", wxData.tafs, sizeof(WxTaf) * tc);
+    wxData.fetchTime = millis();
+    prefs.end();
+    return true;
+}
+
+static void fetchWeather() {
+    setupStationLists();
     wxfetch::fetchAll(wxData, metarIds, tafIds, millis());
     Serial.printf("[WX] Parsed %d METARs, %d TAFs\n", wxData.metarCount, wxData.tafCount);
     for (int i = 0; i < wxData.metarCount; i++)
         Serial.printf("[WX]   %s: %s\n", wxData.metars[i].icao, wxData.metars[i].flightCat);
+    wxCacheSave();
     lastWxFetch = millis();
 }
 
@@ -171,17 +219,18 @@ void handleTouch()
         return;
     }
 
-    if (tp.x >= RADAR_SIZE) return;
+    bool left = tp.x < RADAR_SIZE / 2;
+    bool top  = tp.y < DISPLAY_H / 2;
 
-    if (tp.x < RADAR_SIZE / 2 && tp.y < RADAR_SIZE / 2) {
+    if (left && top) {
         double d = aircraftManager.GetDiameterNm();
         d *= 2.0 / 3.0;
         if (d < 2) d = 2;
         aircraftManager.SetDiameterNm(d);
-    } else if (tp.x >= RADAR_SIZE / 2 && tp.y < RADAR_SIZE / 2) {
+    } else if (!left && top) {
         displayMode = MODE_METAR_DETAIL;
         modeStartTime = millis();
-    } else if (tp.x < RADAR_SIZE / 2 && tp.y >= RADAR_SIZE / 2) {
+    } else if (left && !top) {
         double d = aircraftManager.GetDiameterNm();
         d *= 3.0 / 2.0;
         if (d > 50) d = 50;
@@ -228,7 +277,7 @@ void setup()
     tft.drawCentreString("WiFi connected!", DISPLAY_W / 2, DISPLAY_H / 2 - 16);
     tft.setTextSize(1);
     tft.drawCentreString(WiFi.localIP().toString(), DISPLAY_W / 2, DISPLAY_H / 2 + 8);
-    delay(2500);
+    delay(1500);
 
     configServer.Initialise();
     aircraftManager.Initialise();
@@ -237,10 +286,27 @@ void setup()
     renderScanlines = scanlinePref.isEmpty() || scanlinePref == "true";
 
     memset(&wxData, 0, sizeof(wxData));
-    backbuffer.deleteSprite();
-    fetchWeather();
-    backbuffer.setColorDepth(8);
-    backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
+    setupStationLists();
+
+    if (wxCacheLoad()) {
+        Serial.printf("[WX] Loaded cache: %d METARs, %d TAFs\n",
+                      wxData.metarCount, wxData.tafCount);
+        lastWxFetch = millis();
+        backbuffer.deleteSprite();
+        checkin();
+        backbuffer.setColorDepth(8);
+        backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
+    } else {
+        tft.fillScreen(lgfx::color888(0, 0, 0));
+        tft.setTextSize(1);
+        tft.setTextColor(lgfx::color888(0, 160, 0));
+        tft.drawCentreString("Fetching weather...", DISPLAY_W / 2, DISPLAY_H / 2);
+        backbuffer.deleteSprite();
+        checkin();
+        fetchWeather();
+        backbuffer.setColorDepth(8);
+        backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
+    }
 
     lastOtaCheck = millis();
 }
