@@ -36,18 +36,27 @@ static inline void globalCleanup() { curl_global_cleanup(); }
 #else
 // ---- ESP32: HTTPClient ----
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 
 namespace httpfetch {
 
 static inline std::string get(const char* url) {
     HTTPClient client;
-    client.begin(url);
+    WiFiClientSecure secureClient;
+    secureClient.setInsecure();
+    Serial.printf("[HTTP] GET %s\n", url);
+    client.begin(secureClient, url);
     client.setTimeout(15000);
+    client.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
     int code = client.GET();
+    Serial.printf("[HTTP] Response: %d\n", code);
     std::string body;
     if (code == 200) {
         String s = client.getString();
         body.assign(s.c_str(), s.length());
+        Serial.printf("[HTTP] Body: %d bytes\n", (int)body.size());
+    } else {
+        Serial.printf("[HTTP] Failed, heap: %u\n", ESP.getFreeHeap());
     }
     client.end();
     return body;

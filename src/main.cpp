@@ -68,6 +68,9 @@ static void fetchWeather() {
     for (int i = 0; i < 4; i++) tafBotRow[i] = tafStationPtrs[4 + i];
 
     wxfetch::fetchAll(wxData, metarIds, tafIds, millis());
+    Serial.printf("[WX] Parsed %d METARs, %d TAFs\n", wxData.metarCount, wxData.tafCount);
+    for (int i = 0; i < wxData.metarCount; i++)
+        Serial.printf("[WX]   %s: %s\n", wxData.metars[i].icao, wxData.metars[i].flightCat);
     lastWxFetch = millis();
 }
 
@@ -234,7 +237,10 @@ void setup()
     renderScanlines = scanlinePref.isEmpty() || scanlinePref == "true";
 
     memset(&wxData, 0, sizeof(wxData));
+    backbuffer.deleteSprite();
     fetchWeather();
+    backbuffer.setColorDepth(8);
+    backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
 
     lastOtaCheck = millis();
 }
@@ -285,7 +291,10 @@ void loop()
     }
 
     if (millis() - lastWxFetch >= WX_FETCH_INTERVAL) {
+        backbuffer.deleteSprite();
         fetchWeather();
+        backbuffer.setColorDepth(8);
+        backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
     }
 
     unsigned long timeout = (displayMode == MODE_TAF_MAP) ? 20000 : 15000;
