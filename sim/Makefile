@@ -12,7 +12,7 @@ CXXFLAGS := -std=c++17 -O2 -Wall -Wno-unused-function \
 	-DLGFX_USE_V1 \
 	-DLGFX_SDL
 
-LDFLAGS := $(shell sdl2-config --libs)
+LDFLAGS := $(shell sdl2-config --libs) -lcurl
 
 # LovyanGFX core sources (only what we need)
 LGFX_SRCS := \

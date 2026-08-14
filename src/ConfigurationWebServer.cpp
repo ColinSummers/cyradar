@@ -14,7 +14,7 @@ static const char CONFIG_HTML[] PROGMEM = R"html(
         label{display:flex;gap:.5em;margin:.4em 0;align-items:center;flex-wrap:wrap}
         label span{min-width:10em}
         input[type=number],input[type=text]{flex:1;background:#111;border:1px solid #0f0;color:#0f0;padding:.3em;font-family:monospace}
-        textarea{width:100%;background:#111;border:1px solid #0f0;color:#0f0;padding:.3em;font-family:monospace;resize:vertical;box-sizing:border-box}
+        textarea{width:100%%;background:#111;border:1px solid #0f0;color:#0f0;padding:.3em;font-family:monospace;resize:vertical;box-sizing:border-box}
         input[type=checkbox]{accent-color:#0f0}
         button,input[type=submit]{background:#0f0;color:#000;border:none;padding:.4em .8em;cursor:pointer;font-family:monospace}
         .row{display:flex;gap:1em;flex-wrap:wrap}
@@ -23,7 +23,6 @@ static const char CONFIG_HTML[] PROGMEM = R"html(
         .apt-row{display:flex;gap:.5em;align-items:center;margin-bottom:.5em}
         .apt-row input{max-width:6em;text-transform:uppercase}
         .sub{color:#080;font-size:.9em;margin:.3em 0 .2em}
-        .rwy-row{color:#0a0;margin:.2em 0;font-size:.95em}
     </style>
 </head>
 <body>
@@ -43,14 +42,12 @@ static const char CONFIG_HTML[] PROGMEM = R"html(
                 <input name="longitude" type="number" min="-180" step="0.0001" max="180" value="%LONGITUDE%">
             </label>
         </div>
+        <label><span>Ignore above (ft MSL):</span>
+            <input name="maxalt" type="number" min="500" step="500" max="60000" value="%MAXALT%">
+        </label>
     </fieldset>
 
-    <fieldset>
-        <legend>Runways</legend>
-        <div id="rwy-list"></div>
-        <input name="runways" type="hidden" value="%RUNWAYS_ESC%">
-        <div class="sub">Populated by airport Lookup</div>
-    </fieldset>
+    <input name="runways" type="hidden" value="%RUNWAYS_ESC%">
 
     <fieldset>
         <legend>Radar Display</legend>
@@ -66,7 +63,7 @@ static const char CONFIG_HTML[] PROGMEM = R"html(
 
     <fieldset>
         <legend>Weather Stations</legend>
-        <div class="sub">METAR map (comma-separated ICAO):</div>
+        <div class="sub">METAR map (space-separated ICAO):</div>
         <textarea name="metars" rows="2">%METARS%</textarea>
         <div class="sub">TAF grid (8 stations, top row then bottom row):</div>
         <textarea name="tafs" rows="2">%TAFS%</textarea>
@@ -84,30 +81,25 @@ static const char CONFIG_HTML[] PROGMEM = R"html(
 
     <fieldset>
         <legend>Known Tails</legend>
-        <textarea name="knowntails" rows="4" placeholder="N12345, N67890">%KNOWNTAILS%</textarea>
+        <textarea name="knowntails" rows="4" placeholder="N12345 N67890">%KNOWNTAILS%</textarea>
+    </fieldset>
+
+    <fieldset>
+        <legend>About</legend>
+        <div class="sub">CYRadar v%FW_VER%</div>
+        <div class="sub">Built %BUILD_DATE% %BUILD_TIME%</div>
+        <div class="sub"><a href="https://github.com/ColinSummers/cyradar" style="color:#0a0">github.com/ColinSummers/cyradar</a></div>
     </fieldset>
 
     <input type="submit" value="Save &amp; Restart" style="margin-top:.5em">
     <div id="result"></div>
 </form>
 <script>
-var rwyData=null;
-try{rwyData=JSON.parse(document.querySelector('[name=runways]').value)}catch(e){}
-if(rwyData&&rwyData.length)showRunways(rwyData);
-
-function showRunways(arr){
-    var h='';
-    arr.forEach(function(r){
-        h+='<div class="rwy-row">Rwy '+r.id+'  hdg '+r.h1+'/'+r.h2+'</div>';
-    });
-    document.getElementById('rwy-list').innerHTML=h;
-}
-
 document.getElementById('btn-lookup').addEventListener('click', function(){
     var id=document.querySelector('[name=airport]').value.toUpperCase().trim();
     var s=document.getElementById('ls');
-    if(id.length<3){s.textContent='Enter ICAO';s.className='err';return;}
-    s.textContent='Fetching runways...';s.className='';
+    if(id.length<2){s.textContent='Enter identifier';s.className='err';return;}
+    s.textContent='Looking up...';s.className='';
 
     fetch('https://davidmegginson.github.io/ourairports-data/runways.csv')
     .then(function(r){return r.text()})
@@ -132,16 +124,16 @@ document.getElementById('btn-lookup').addEventListener('click', function(){
             found.push({id:le+'/'+he,h1:h1,h2:h2,lat1:lat1,lon1:lon1,lat2:lat2,lon2:lon2});
             if(!isNaN(lat1)&&!isNaN(lat2)){apLat=(lat1+lat2)/2;apLon=(lon1+lon2)/2;}
         }
-        if(!found.length){s.textContent='No runways found for '+id;s.className='err';return;}
-        document.querySelector('[name=runways]').value=JSON.stringify(found);
+        document.querySelector('[name=runways]').value=found.length?JSON.stringify(found):'[]';
         if(apLat&&apLon){
             document.querySelector('[name=latitude]').value=apLat.toFixed(4);
             document.querySelector('[name=longitude]').value=apLon.toFixed(4);
+            s.textContent=found.length?found.length+' rwy':'Found (no runways)';s.className='';
+        } else {
+            s.textContent='Not found in runway DB';s.className='err';
         }
-        showRunways(found);
-        s.textContent=found.length+' runway'+(found.length>1?'s':'')+' found';s.className='';
     })
-    .catch(function(){s.textContent='Lookup failed - enter data manually';s.className='err'});
+    .catch(function(){s.textContent='Lookup failed - enter coords manually';s.className='err'});
 });
 
 document.getElementById('cfg').addEventListener('submit', function(e){
@@ -186,16 +178,18 @@ void ConfigurationWebServer::ApplyDefaults() {
         prefs.putString("longitude", String(DEFAULT_LONGITUDE, 4));
     if (prefs.getString("diameter", "").isEmpty())
         prefs.putString("diameter", String(DEFAULT_DIAMETER_NM));
+    if (prefs.getString("maxalt", "").isEmpty())
+        prefs.putString("maxalt", "8000");
     if (prefs.getString("opensky-id", "").isEmpty() && strlen(OPENSKY_CLIENT_ID) > 0)
         prefs.putString("opensky-id", OPENSKY_CLIENT_ID);
     if (prefs.getString("opensky-secret", "").isEmpty() && strlen(OPENSKY_CLIENT_SECRET) > 0)
         prefs.putString("opensky-secret", OPENSKY_CLIENT_SECRET);
     if (prefs.getString("knowntails", "").isEmpty())
-        prefs.putString("knowntails", "N80117, N2939J");
+        prefs.putString("knowntails", "N80117 N2939J");
     if (prefs.getString("metars", "").isEmpty())
-        prefs.putString("metars", "KFHR, KNUW, KPAE, KBFI, KBVS, KBLI, KORS");
+        prefs.putString("metars", "KFHR KNUW KPAE KBFI KBVS KBLI KORS");
     if (prefs.getString("tafs", "").isEmpty())
-        prefs.putString("tafs", "KFHR, KNUW, KPAE, KBFI, KBVS, KBLI, KORS, KCLM");
+        prefs.putString("tafs", "KFHR KNUW KPAE KBFI KBVS KBLI KORS KCLM");
     if (prefs.getString("runways", "").isEmpty())
         prefs.putString("runways", "[{\"id\":\"16/34\",\"h1\":177,\"h2\":357,\"lat1\":48.5266,\"lon1\":-123.025,\"lat2\":48.5173,\"lon2\":-123.024}]");
     if (prefs.getString("scanline", "").isEmpty())
@@ -216,11 +210,13 @@ void ConfigurationWebServer::Initialise() {
     }
 
     server.on("/", HTTP_GET, [&](AsyncWebServerRequest* request) {
+        configActiveUntil = millis() + 60000;
         prefs.begin("config", true);
         const String airport         = prefs.getString("airport", "KFHR");
         const String latitude        = prefs.getString("latitude", "");
         const String longitude       = prefs.getString("longitude", "");
         const String diameter        = prefs.getString("diameter", "8");
+        const String maxalt          = prefs.getString("maxalt", "8000");
         const String openskyClientId = prefs.getString("opensky-id", "");
         String openskySecret         = prefs.getString("opensky-secret", "");
         const String knownTails      = prefs.getString("knowntails", "");
@@ -238,7 +234,7 @@ void ConfigurationWebServer::Initialise() {
         AsyncWebServerResponse* response = request->beginResponse(
             200, "text/html",
             (const uint8_t*)CONFIG_HTML, sizeof(CONFIG_HTML) - 1,
-            [airport, latitude, longitude, diameter, openskyClientId, openskySecret,
+            [airport, latitude, longitude, diameter, maxalt, openskyClientId, openskySecret,
              knownTails, metars, tafs, runwaysEsc,
              scanlineEnabled, infoTextEnabled, triangleEnabled]
             (const String& var) -> String {
@@ -246,6 +242,7 @@ void ConfigurationWebServer::Initialise() {
                 if (var == "LATITUDE")       return latitude;
                 if (var == "LONGITUDE")      return longitude;
                 if (var == "DIAMETER")       return diameter;
+                if (var == "MAXALT")         return maxalt;
                 if (var == "OPENSKY_ID")     return openskyClientId;
                 if (var == "OPENSKY_SECRET") return openskySecret;
                 if (var == "KNOWNTAILS")     return knownTails;
@@ -255,6 +252,9 @@ void ConfigurationWebServer::Initialise() {
                 if (var == "SCANLINE")       return scanlineEnabled == "true" ? "checked" : "";
                 if (var == "INFOTEXT")       return infoTextEnabled == "true" ? "checked" : "";
                 if (var == "TRIANGLE")       return triangleEnabled == "true" ? "checked" : "";
+                if (var == "FW_VER")         return FW_VERSION;
+                if (var == "BUILD_DATE")     return __DATE__;
+                if (var == "BUILD_TIME")     return __TIME__;
                 return "";
             }
         );
@@ -275,6 +275,7 @@ void ConfigurationWebServer::Initialise() {
         TrySaveParam("latitude");
         TrySaveParam("longitude");
         TrySaveParam("diameter");
+        TrySaveParam("maxalt");
         TrySaveParam("opensky-id");
         TrySaveParam("knowntails");
         TrySaveParam("metars");

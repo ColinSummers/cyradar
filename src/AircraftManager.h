@@ -16,6 +16,7 @@ private:
     double lon = 0.0;
     double rad = 0.5;
     double displayRad = 0.5;
+    float maxAltMeters = 2438.4f;
     String airportId;
     std::vector<RunwayInfo> runways;
     std::map<String, TrackedAircraft> trackedAircraft;

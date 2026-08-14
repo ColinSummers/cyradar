@@ -7,4 +7,3 @@ constexpr int RADAR_CENTRE = RADAR_SIZE / 2 - 1;
 constexpr int RADAR_RADIUS = RADAR_SIZE / 2 - 1;
 constexpr int SIDEBAR_X = RADAR_SIZE;
 constexpr int SIDEBAR_W = DISPLAY_W - RADAR_SIZE;
-constexpr float MAX_ALT_METERS = 2438.4f; // 8000 ft

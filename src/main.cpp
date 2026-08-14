@@ -15,10 +15,14 @@
 #include "OpenSkyAuthTokenHandler.h"
 #include "AircraftManager.h"
 #include "DrawHelpers.h"
+#include "WeatherData.h"
+#include "WeatherParse.h"
+#include "WeatherScreens.h"
 #include "models/Aircraft.h"
 #include "models/TrackedAircraft.h"
 
 constexpr unsigned long OTA_CHECK_INTERVAL = 24UL * 60 * 60 * 1000;
+constexpr unsigned long WX_FETCH_INTERVAL = 5UL * 60 * 1000;
 
 LGFX tft;
 LGFX_Sprite backbuffer(&tft);
@@ -32,84 +36,84 @@ AircraftManager aircraftManager(configServer, authHandler, http);
 
 unsigned long lastTouchTime = 0;
 unsigned long lastOtaCheck = 0;
+unsigned long lastWxFetch = 0;
 bool renderScanlines = true;
 
-// ---- Display modes ----
 enum DisplayMode { MODE_RADAR, MODE_METAR_DETAIL, MODE_WEATHER_MAP, MODE_TAF_MAP };
 static DisplayMode displayMode = MODE_RADAR;
 static unsigned long modeStartTime = 0;
 
-// ---- Mock weather data (until real API fetch is implemented) ----
-struct MockMetar {
-    const char* icao;
-    int windDir;
-    int windSpd;
-    int windGust;
-    float visibility;
-    const char* sky;
-    float tempC;
-    float dewpC;
-    float altimeter;
-    const char* flightCat;
-    const char* rawOb;
-};
+static WxData wxData;
+static const char* tafTopRow[4];
+static const char* tafBotRow[4];
+static char metarIds[128];
+static char tafIds[128];
 
-static MockMetar mockMetars[] = {
-    {"KFHR", 210, 8, 0, 10.0f, "Few at 3500'", 18.0f, 12.0f, 30.12f, "VFR",
-     "KFHR 140056Z AUTO 21008KT 10SM FEW035 18/12 A3012 RMK AO2"},
-    {"KNUW", 200, 10, 0, 5.0f, "Broken at 2500'", 17.0f, 14.0f, 30.09f, "MVFR",
-     "KNUW 140056Z AUTO 20010KT 5SM BKN025 17/14 A3009 RMK AO2"},
-    {"KPAE", 170, 8, 0, 10.0f, "Few at 5000'", 21.0f, 13.0f, 30.10f, "VFR",
-     "KPAE 140056Z 17008KT 10SM FEW050 21/13 A3010 RMK AO2"},
-    {"KBFI", 190, 10, 0, 10.0f, "Scattered at 4500'", 22.0f, 14.0f, 30.08f, "VFR",
-     "KBFI 140056Z 19010KT 10SM SCT045 22/14 A3008 RMK AO2"},
-    {"KBVS", 180, 6, 0, 10.0f, "Clear", 22.0f, 11.0f, 30.11f, "VFR",
-     "KBVS 140056Z AUTO 18006KT 10SM CLR 22/11 A3011 RMK AO2"},
-    {"KBLI", 190, 12, 18, 10.0f, "Scattered at 4000'", 20.0f, 13.0f, 30.10f, "VFR",
-     "KBLI 140056Z 19012G18KT 10SM SCT040 20/13 A3010 RMK AO2"},
-    {"KORS", 220, 5, 0, 10.0f, "Few at 4000'", 19.0f, 12.0f, 30.11f, "VFR",
-     "KORS 140056Z AUTO 22005KT 10SM FEW040 19/12 A3011 RMK AO2"},
-    {"KCLM", 250, 7, 0, 10.0f, "Clear", 20.0f, 11.0f, 30.10f, "VFR",
-     "KCLM 140056Z AUTO 25007KT 10SM CLR 20/11 A3010 RMK AO2"},
-};
-static const int MOCK_METAR_COUNT = sizeof(mockMetars) / sizeof(mockMetars[0]);
-static unsigned long mockMetarFetchTime = 0;
-
-struct MockTafPeriod {
-    const char* flightCat;
-    const char* label;
-};
-
-struct MockTaf {
-    const char* icao;
-    MockTafPeriod periods[8];
-    int periodCount;
-};
-
-static MockTaf mockTafs[] = {
-    {"KFHR", {}, 0},
-    {"KNUW", {{"VFR","12a"},{"IFR","1a"},{"LIFR","T"},{"VFR","11a"}}, 4},
-    {"KPAE", {{"VFR","11p"},{"LIFR","5a"},{"VFR","9a"},{"VFR","4p"},{"VFR","8p"}}, 5},
-    {"KBFI", {{"VFR","11p"},{"MVFR","6a"},{"IFR","7a"},{"VFR","10a"},{"VFR","8p"}}, 5},
-    {"KBVS", {}, 0},
-    {"KBLI", {{"VFR","11p"},{"VFR","6a"},{"VFR","10a"}}, 3},
-    {"KORS", {}, 0},
-    {"KCLM", {{"LIFR","11p"},{"MVFR","9a"},{"VFR","1p"},{"VFR","5p"}}, 4},
-};
-static const int MOCK_TAF_COUNT = sizeof(mockTafs) / sizeof(mockTafs[0]);
-
-static uint32_t flightCatColor(const char* cat) {
-    if (strcmp(cat, "VFR") == 0)  return lgfx::color888(0, 220, 0);
-    if (strcmp(cat, "MVFR") == 0) return lgfx::color888(0, 140, 255);
-    if (strcmp(cat, "IFR") == 0)  return lgfx::color888(255, 100, 180);
-    if (strcmp(cat, "LIFR") == 0) return lgfx::color888(255, 0, 0);
-    return lgfx::color888(128, 128, 128);
+// ---- Weather fetch ----
+static String wxFetchUrl(const char* url) {
+    HTTPClient client;
+    client.begin(url);
+    client.setTimeout(15000);
+    int code = client.GET();
+    String body;
+    if (code == 200) body = client.getString();
+    else Serial.printf("[WX] Fetch failed: %d %s\n", code, url);
+    client.end();
+    return body;
 }
 
-static const char* findMetarCat(const char* icao) {
-    for (int j = 0; j < MOCK_METAR_COUNT; j++)
-        if (strcmp(mockMetars[j].icao, icao) == 0) return mockMetars[j].flightCat;
-    return "???";
+static void buildStationUrl(char* url, int maxLen, const char* endpoint, const char* ids) {
+    char encoded[128];
+    int j = 0;
+    for (int i = 0; ids[i] && j < (int)sizeof(encoded) - 1; i++) {
+        if (ids[i] == ' ') {
+            if (j > 0 && encoded[j-1] != ',') encoded[j++] = ',';
+        } else {
+            encoded[j++] = ids[i];
+        }
+    }
+    encoded[j] = '\0';
+    snprintf(url, maxLen, "https://aviationweather.gov/api/data/%s?ids=%s&format=json", endpoint, encoded);
+}
+
+static void fetchWeather() {
+    String metarStations = configServer.GetStoredString("metars");
+    String tafStations = configServer.GetStoredString("tafs");
+    if (metarStations.isEmpty()) metarStations = "KFHR KNUW KPAE KBFI KBVS KBLI KORS";
+    if (tafStations.isEmpty()) tafStations = "KFHR KNUW KPAE KBFI KBVS KBLI KORS KCLM";
+
+    strncpy(metarIds, metarStations.c_str(), sizeof(metarIds) - 1);
+    strncpy(tafIds, tafStations.c_str(), sizeof(tafIds) - 1);
+
+    // Parse TAF station list into top/bot row arrays
+    static char tafIdsCopy[128];
+    strncpy(tafIdsCopy, tafIds, sizeof(tafIdsCopy) - 1);
+    static char* tafStationPtrs[8] = {};
+    int n = 0;
+    char* tok = strtok(tafIdsCopy, " ");
+    while (tok && n < 8) { tafStationPtrs[n++] = tok; tok = strtok(nullptr, " "); }
+    while (n < 8) tafStationPtrs[n++] = (char*)"";
+    for (int i = 0; i < 4; i++) tafTopRow[i] = tafStationPtrs[i];
+    for (int i = 0; i < 4; i++) tafBotRow[i] = tafStationPtrs[4 + i];
+
+    char url[256];
+
+    Serial.println("[WX] Fetching METARs...");
+    buildStationUrl(url, sizeof(url), "metar", metarIds);
+    String metarJson = wxFetchUrl(url);
+    if (metarJson.length() > 0) {
+        wxparse::parseMETARs(metarJson.c_str(), wxData);
+        Serial.printf("[WX] Loaded %d METARs\n", wxData.metarCount);
+    }
+
+    Serial.println("[WX] Fetching TAFs...");
+    buildStationUrl(url, sizeof(url), "taf", tafIds);
+    String tafJson = wxFetchUrl(url);
+    wxparse::parseTAFs(tafJson.length() > 0 ? tafJson.c_str() : "[]", wxData, tafIds);
+    Serial.printf("[WX] Loaded %d TAFs\n", wxData.tafCount);
+
+    wxData.fetchTime = millis();
+    lastWxFetch = millis();
 }
 
 // ---- OTA ----
@@ -170,223 +174,6 @@ bool checkHttpOta()
     backbuffer.setColorDepth(8);
     backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
     return updated;
-}
-
-// ---- WX drawing functions ----
-void drawMetarDetail()
-{
-    backbuffer.fillScreen(0);
-
-    const String& apt = aircraftManager.GetAirportId();
-    MockMetar* m = nullptr;
-    for (int i = 0; i < MOCK_METAR_COUNT; i++) {
-        if (apt.equalsIgnoreCase(mockMetars[i].icao)) {
-            m = &mockMetars[i];
-            break;
-        }
-    }
-    if (!m) m = &mockMetars[0];
-
-    uint32_t green = lgfx::color888(0, 200, 0);
-    uint32_t dim   = lgfx::color888(0, 100, 0);
-
-    backbuffer.setTextSize(2);
-    backbuffer.setTextColor(green);
-    backbuffer.drawString(apt.c_str(), 10, 8);
-    backbuffer.setTextColor(flightCatColor(m->flightCat));
-    backbuffer.drawString(m->flightCat, 110, 8);
-
-    backbuffer.setTextSize(1);
-    backbuffer.setTextColor(green);
-
-    char buf[80];
-    int y = 38;
-    const int lh = 14;
-
-    if (m->windSpd == 0)
-        snprintf(buf, sizeof(buf), "Wind    Calm");
-    else if (m->windGust > 0)
-        snprintf(buf, sizeof(buf), "Wind    %03d at %d G%d kt", m->windDir, m->windSpd, m->windGust);
-    else
-        snprintf(buf, sizeof(buf), "Wind    %03d at %d kt", m->windDir, m->windSpd);
-    backbuffer.drawString(buf, 10, y); y += lh;
-
-    if (m->visibility >= 10.0f)
-        snprintf(buf, sizeof(buf), "Vis     10+ SM");
-    else
-        snprintf(buf, sizeof(buf), "Vis     %.0f SM", m->visibility);
-    backbuffer.drawString(buf, 10, y); y += lh;
-
-    snprintf(buf, sizeof(buf), "Sky     %s", m->sky);
-    backbuffer.drawString(buf, 10, y); y += lh;
-
-    float tempF = m->tempC * 9.0f / 5.0f + 32.0f;
-    float dewF  = m->dewpC * 9.0f / 5.0f + 32.0f;
-    snprintf(buf, sizeof(buf), "Temp    %.0fF  Dew %.0fF", tempF, dewF);
-    backbuffer.drawString(buf, 10, y); y += lh;
-
-    snprintf(buf, sizeof(buf), "Altim   %.2f\"", m->altimeter);
-    backbuffer.drawString(buf, 10, y); y += lh;
-
-    if (m->windSpd > 0) {
-        const auto& rwys = aircraftManager.GetRunways();
-        for (const auto& rwy : rwys) {
-            float a1 = fmodf(m->windDir - rwy.heading1 + 360.0f, 360.0f);
-            if (a1 > 180.0f) a1 -= 360.0f;
-            float a2 = fmodf(m->windDir - rwy.heading2 + 360.0f, 360.0f);
-            if (a2 > 180.0f) a2 -= 360.0f;
-
-            const char* end;
-            float angle;
-            char endBuf[4];
-            if (fabsf(a1) <= 90.0f) {
-                int num = (int)(rwy.heading1 / 10.0f + 0.5f);
-                snprintf(endBuf, sizeof(endBuf), "%d", num);
-                end = endBuf;
-                angle = a1;
-            } else {
-                int num = (int)(rwy.heading2 / 10.0f + 0.5f);
-                snprintf(endBuf, sizeof(endBuf), "%d", num);
-                end = endBuf;
-                angle = a2;
-            }
-
-            float rad = angle * M_PI / 180.0f;
-            int hw = (int)(m->windSpd * cosf(rad) + 0.5f);
-            int xw = (int)(fabsf(m->windSpd * sinf(rad)) + 0.5f);
-            snprintf(buf, sizeof(buf), "Rwy %-3s %d hw  %d xw", end, hw, xw);
-            backbuffer.drawString(buf, 10, y);
-            y += lh;
-        }
-    }
-    y += 6;
-
-    backbuffer.setTextColor(dim);
-    String raw = m->rawOb;
-    const int maxChars = (DISPLAY_W - 20) / 6;
-    if ((int)raw.length() > maxChars) {
-        int splitAt = -1;
-        for (int i = maxChars; i >= maxChars / 2; i--) {
-            if (raw[i] == ' ') { splitAt = i; break; }
-        }
-        if (splitAt < 0) splitAt = maxChars;
-        backbuffer.drawString(raw.substring(0, splitAt), 10, y); y += 10;
-        backbuffer.drawString(raw.substring(splitAt + 1), 10, y);
-    } else {
-        backbuffer.drawString(raw, 10, y);
-    }
-
-    backbuffer.drawRect(218, 206, 96, 16, lgfx::color888(0, 100, 0));
-    backbuffer.setTextColor(lgfx::color888(0, 160, 0));
-    backbuffer.drawString("FW Update", 224, 210);
-
-    int ageMin = (int)((millis() - mockMetarFetchTime) / 60000);
-    snprintf(buf, sizeof(buf), "WX: %d min ago", ageMin);
-    backbuffer.setTextColor(lgfx::color888(0, 60, 0));
-    backbuffer.drawString(buf, 4, DISPLAY_H - 22);
-
-    snprintf(buf, sizeof(buf), "v%s  %s", FW_VERSION, __DATE__);
-    backbuffer.drawString(buf, 4, DISPLAY_H - 10);
-}
-
-void drawWeatherMap()
-{
-    backbuffer.fillScreen(0);
-
-    const float latMin = 47.40f, latMax = 48.90f;
-    const float lonMin = -123.60f, lonMax = -122.10f;
-    const int mapTop = 14, mapBot = DISPLAY_H - 14;
-    const int mapLeft = 10, mapRight = DISPLAY_W - 10;
-    const int mapW = mapRight - mapLeft;
-    const int mapH = mapBot - mapTop;
-
-    for (int i = 0; i < ROUTE_STATION_COUNT; i++) {
-        int sx = mapLeft + (int)((ROUTE_STATIONS[i].lon - lonMin) / (lonMax - lonMin) * mapW);
-        int sy = mapTop + (int)((latMax - ROUTE_STATIONS[i].lat) / (latMax - latMin) * mapH);
-
-        uint32_t color = flightCatColor(findMetarCat(ROUTE_STATIONS[i].icao));
-        backbuffer.fillCircle(sx, sy, 6, color);
-        backbuffer.drawCircle(sx, sy, 7, lgfx::color888(60, 60, 60));
-
-        backbuffer.setTextSize(1);
-        backbuffer.setTextColor(lgfx::color888(180, 180, 180));
-
-        int labelX = sx + 10;
-        int labelY = sy - 4;
-        if (labelX + 28 > DISPLAY_W - 4)
-            labelX = sx - 32;
-
-        backbuffer.drawString(ROUTE_STATIONS[i].icao, labelX, labelY);
-    }
-
-    int ageMin = (int)((millis() - mockMetarFetchTime) / 60000);
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%d min ago", ageMin);
-    backbuffer.setTextColor(lgfx::color888(0, 60, 0));
-    backbuffer.drawString(buf, 4, DISPLAY_H - 10);
-}
-
-static const char* TAF_TOP_ROW[] = {"KFHR", "KNUW", "KPAE", "KBFI"};
-static const char* TAF_BOT_ROW[] = {"KBVS", "KBLI", "KORS", "KCLM"};
-
-void drawTafMap()
-{
-    backbuffer.fillScreen(0);
-
-    const int cols = 4;
-    const int colW = 72;
-    const int gridW = cols * colW;
-    const int xOff = (DISPLAY_W - gridW) / 2;
-
-    const int topRowY = 110;
-    const int botRowY = 126;
-    const int dotR = 4;
-    const int dotSpacing = 12;
-
-    backbuffer.setTextSize(1);
-
-    auto findTaf = [](const char* icao) -> const MockTaf* {
-        for (int j = 0; j < MOCK_TAF_COUNT; j++)
-            if (strcmp(mockTafs[j].icao, icao) == 0) return &mockTafs[j];
-        return nullptr;
-    };
-
-    auto drawColumn = [&](int cx, const char* icao, int anchorY, int dir, bool showLabels) {
-        const MockTaf* taf = findTaf(icao);
-        if (taf && taf->periodCount > 0) {
-            for (int p = 0; p < taf->periodCount; p++) {
-                int dy = anchorY + dir * (p * dotSpacing);
-                backbuffer.fillCircle(cx, dy, dotR, flightCatColor(taf->periods[p].flightCat));
-                if (strcmp(taf->periods[p].label, "T") == 0)
-                    backbuffer.drawCircle(cx, dy, dotR + 1, lgfx::color888(120, 120, 120));
-                if (showLabels) {
-                    backbuffer.setTextColor(lgfx::color888(0, 80, 0));
-                    backbuffer.drawString(taf->periods[p].label, cx + dotR + 4, dy - 4);
-                }
-            }
-        } else {
-            backbuffer.fillCircle(cx, anchorY, dotR, flightCatColor(findMetarCat(icao)));
-        }
-    };
-
-    for (int c = 0; c < cols; c++) {
-        int cx = xOff + c * colW + colW / 2;
-        bool isLast = (c == cols - 1);
-
-        backbuffer.setTextColor(lgfx::color888(0, 160, 0));
-        backbuffer.drawCentreString(TAF_TOP_ROW[c] + 1, cx, topRowY);
-        drawColumn(cx, TAF_TOP_ROW[c], topRowY - 10, -1, isLast);
-
-        backbuffer.setTextColor(lgfx::color888(0, 160, 0));
-        backbuffer.drawCentreString(TAF_BOT_ROW[c] + 1, cx, botRowY);
-        drawColumn(cx, TAF_BOT_ROW[c], botRowY + 14, 1, isLast);
-    }
-
-    int ageMin = (int)((millis() - mockMetarFetchTime) / 60000);
-    char buf[32];
-    snprintf(buf, sizeof(buf), "TAF  %d min ago", ageMin);
-    backbuffer.setTextColor(lgfx::color888(0, 60, 0));
-    backbuffer.drawString(buf, 4, DISPLAY_H - 10);
 }
 
 // ---- Touch ----
@@ -491,7 +278,9 @@ void setup()
     String scanlinePref = configServer.GetStoredString("scanline");
     renderScanlines = scanlinePref.isEmpty() || scanlinePref == "true";
 
-    mockMetarFetchTime = millis();
+    memset(&wxData, 0, sizeof(wxData));
+    fetchWeather();
+
     lastOtaCheck = millis();
 }
 
@@ -522,9 +311,26 @@ void loop()
     if (configServer.shouldRestart && millis() >= configServer.restartAt)
         ESP.restart();
 
+    if (millis() < configServer.configActiveUntil) {
+        backbuffer.fillScreen(0);
+        backbuffer.setTextSize(1.5);
+        backbuffer.setTextColor(lgfx::color888(0, 160, 0));
+        backbuffer.drawCentreString("Configuration", DISPLAY_W / 2, DISPLAY_H / 2 - 16);
+        backbuffer.drawCentreString("in flux...", DISPLAY_W / 2, DISPLAY_H / 2 + 4);
+        backbuffer.setTextSize(1);
+        backbuffer.setTextColor(lgfx::color888(0, 80, 0));
+        backbuffer.drawCentreString(WiFi.localIP().toString(), DISPLAY_W / 2, DISPLAY_H / 2 + 28);
+        backbuffer.pushSprite(0, 0);
+        return;
+    }
+
     if (millis() - lastOtaCheck >= OTA_CHECK_INTERVAL) {
         lastOtaCheck = millis();
         checkHttpOta();
+    }
+
+    if (millis() - lastWxFetch >= WX_FETCH_INTERVAL) {
+        fetchWeather();
     }
 
     unsigned long timeout = (displayMode == MODE_TAF_MAP) ? 20000 : 15000;
@@ -532,10 +338,25 @@ void loop()
         displayMode = MODE_RADAR;
 
     switch (displayMode) {
-        case MODE_METAR_DETAIL: drawMetarDetail(); break;
-        case MODE_WEATHER_MAP:  drawWeatherMap();  break;
-        case MODE_TAF_MAP:      drawTafMap();      break;
-        default:                drawRadarFrame();  break;
+        case MODE_METAR_DETAIL: {
+            const auto& rwys = aircraftManager.GetRunways();
+            char verBuf[40];
+            snprintf(verBuf, sizeof(verBuf), "v%s  %s", FW_VERSION, __DATE__);
+            wxDrawMetarDetail(backbuffer, wxData,
+                aircraftManager.GetAirportId().c_str(),
+                rwys.data(), (int)rwys.size(),
+                verBuf, millis());
+            break;
+        }
+        case MODE_WEATHER_MAP:
+            wxDrawWeatherMap(backbuffer, wxData, millis());
+            break;
+        case MODE_TAF_MAP:
+            wxDrawTafMap(backbuffer, wxData, tafTopRow, tafBotRow, millis());
+            break;
+        default:
+            drawRadarFrame();
+            break;
     }
 
     backbuffer.pushSprite(0, 0);

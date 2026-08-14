@@ -23,6 +23,10 @@ void AircraftManager::Initialise()
     rad = diameterNm / 120.0;
     displayRad = rad;
 
+    float maxAltFt = configServer.GetStoredString("maxalt").toFloat();
+    if (maxAltFt <= 0) maxAltFt = 8000;
+    maxAltMeters = maxAltFt * 0.3048f;
+
     const String renderText = configServer.GetStoredString("infotext");
     const String renderTris = configServer.GetStoredString("triangle");
     if (!renderText.isEmpty()) displayInfoText = renderText == "true";
@@ -49,9 +53,10 @@ void AircraftManager::Initialise()
 
     knownTails.clear();
     String tails = configServer.GetStoredString("knowntails");
+    tails.replace(',', ' ');
     tails.trim();
     while (tails.length() > 0) {
-        int sep = tails.indexOf(',');
+        int sep = tails.indexOf(' ');
         String entry;
         if (sep < 0) {
             entry = tails;
@@ -138,7 +143,7 @@ void AircraftManager::Update()
         now = millis();
 
         for (auto& ac : aircraft) {
-            if (ac.baroAltitude > MAX_ALT_METERS) continue;
+            if (ac.baroAltitude > maxAltMeters) continue;
             auto it = trackedAircraft.find(ac.icao24);
             if (it == trackedAircraft.end())
                 trackedAircraft.emplace(ac.icao24, TrackedAircraft{ ac, now });
@@ -148,7 +153,7 @@ void AircraftManager::Update()
 
         for (auto it = trackedAircraft.begin(); it != trackedAircraft.end(); ) {
             bool keep = std::any_of(aircraft.begin(), aircraft.end(),
-                [&](const Aircraft& ac) { return ac.icao24 == it->first && ac.baroAltitude <= MAX_ALT_METERS; });
+                [&](const Aircraft& ac) { return ac.icao24 == it->first && ac.baroAltitude <= maxAltMeters; });
             if (!keep)
                 it = trackedAircraft.erase(it);
             else

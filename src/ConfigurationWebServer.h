@@ -11,6 +11,7 @@ private:
 public:
     bool shouldRestart = false;
     unsigned long restartAt = 0;
+    unsigned long configActiveUntil = 0;
 
     ConfigurationWebServer(int port = 80) : server(port), prefs() {}
 
