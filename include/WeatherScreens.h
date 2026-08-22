@@ -110,9 +110,14 @@ static void wxDrawMetarDetail(LGFX_Sprite& bb, const WxData& wx,
         bb.drawString(raw, 10, y);
     }
 
-    bb.drawRect(218, 206, 96, 16, lgfx::color888(0, 100, 0));
+#ifdef BOARD_FREENOVE_S3
+    bb.drawRect(156, 198, 56, 32, lgfx::color888(0, 100, 0));
     bb.setTextColor(lgfx::color888(0, 160, 0));
-    bb.drawString("FW Update", 224, 210);
+    bb.drawString("Ping", 166, 206);
+#endif
+    bb.drawRect(218, 198, 96, 32, lgfx::color888(0, 100, 0));
+    bb.setTextColor(lgfx::color888(0, 160, 0));
+    bb.drawString("FW Update", 224, 206);
 
     int ageMin = (int)((nowMs - wx.fetchTime) / 60000);
     snprintf(buf, sizeof(buf), "WX: %d min ago", ageMin);

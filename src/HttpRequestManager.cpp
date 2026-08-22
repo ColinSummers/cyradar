@@ -101,15 +101,19 @@ bool HttpRequestManager::GetJson(const String& url, JsonDocument& doc, const std
     bool ok = false;
 
     if (code >= 200 && code < 300) {
-        DeserializationError err = deserializeJson(doc, http.getStream());
-        if (err)
-            Serial.printf("[GET] JSON parse failed: %s\n", err.c_str());
-        else
+        String body = http.getString();
+        DeserializationError err = deserializeJson(doc, body);
+        if (err) {
+            Serial.printf("[GET] JSON parse failed: %s (len=%d)\n", err.c_str(), body.length());
+            Serial.printf("[GET] Body preview: %.200s\n", body.c_str());
+        } else {
             ok = true;
+        }
     } else if (code > 0) {
         Serial.printf("[GET] HTTP Error: %d\n", code);
     } else {
-        Serial.printf("[GET] Connection failed: %s\n", http.errorToString(code).c_str());
+        Serial.printf("[GET] Connection failed: %s (heap=%u)\n",
+                      http.errorToString(code).c_str(), ESP.getFreeHeap());
     }
 
     http.end();

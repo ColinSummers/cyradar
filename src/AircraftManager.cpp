@@ -129,6 +129,8 @@ void AircraftManager::Update()
 
     unsigned long now = millis();
     auto aircraft = JsonParser::ParseArray<Aircraft>(doc["states"]);
+    Serial.printf("[OPENSKY] Parsed %d aircraft (interval=%lums)\n",
+                  (int)aircraft.size(), fetchInterval);
 
     for (auto& ac : aircraft) {
         if (ac.baroAltitude > maxAltMeters) continue;

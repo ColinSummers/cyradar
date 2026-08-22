@@ -3,6 +3,7 @@
 #include <WiFiManager.h>
 #include <HTTPUpdate.h>
 #include <WiFiClientSecure.h>
+#include <esp_system.h>
 
 #include <Preferences.h>
 
@@ -21,9 +22,11 @@
 #include "WeatherScreens.h"
 #include "models/Aircraft.h"
 #include "models/TrackedAircraft.h"
+#include "SonarPing.h"
 
 constexpr unsigned long OTA_CHECK_INTERVAL = 24UL * 60 * 60 * 1000;
 constexpr unsigned long WX_FETCH_INTERVAL = 5UL * 60 * 1000;
+constexpr unsigned long CHECKIN_INTERVAL = 60UL * 1000;
 
 LGFX tft;
 LGFX_Sprite backbuffer(&tft);
@@ -38,6 +41,7 @@ AircraftManager aircraftManager(configServer, authHandler, http);
 unsigned long lastTouchTime = 0;
 unsigned long lastOtaCheck = 0;
 unsigned long lastWxFetch = 0;
+unsigned long lastCheckin = 0;
 bool renderScanlines = true;
 
 enum DisplayMode { MODE_RADAR, MODE_METAR_DETAIL, MODE_WEATHER_MAP, MODE_TAF_MAP };
@@ -50,16 +54,76 @@ static const char* tafBotRow[4];
 static char metarIds[128];
 static char tafIds[128];
 
-static void checkin() {
+static const char* resetReasonStr() {
+    switch (esp_reset_reason()) {
+        case ESP_RST_POWERON:   return "poweron";
+        case ESP_RST_SW:        return "sw";
+        case ESP_RST_PANIC:     return "panic";
+        case ESP_RST_INT_WDT:   return "int_wdt";
+        case ESP_RST_TASK_WDT:  return "task_wdt";
+        case ESP_RST_WDT:       return "wdt";
+        case ESP_RST_DEEPSLEEP: return "deepsleep";
+        case ESP_RST_BROWNOUT:  return "brownout";
+        default:                return "unknown";
+    }
+}
+
+static bool isCrashReason(esp_reset_reason_t r) {
+    return r == ESP_RST_PANIC || r == ESP_RST_INT_WDT
+        || r == ESP_RST_TASK_WDT || r == ESP_RST_WDT
+        || r == ESP_RST_BROWNOUT;
+}
+
+static int crashCount = 0;
+
+static void saveUptime() {
+    Preferences prefs;
+    prefs.begin("crashlog", false);
+    prefs.putULong("uptime", millis() / 1000);
+    prefs.end();
+}
+
+static void recordCrashIfAny() {
+    Preferences prefs;
+    prefs.begin("crashlog", false);
+
+    esp_reset_reason_t reason = esp_reset_reason();
+    crashCount = prefs.getInt("count", 0);
+
+    if (isCrashReason(reason)) {
+        unsigned long lastUptime = prefs.getULong("uptime", 0);
+        crashCount++;
+        prefs.putInt("count", crashCount);
+
+        String log = prefs.getString("log", "");
+        char entry[64];
+        snprintf(entry, sizeof(entry), "%s@%lus;", resetReasonStr(), lastUptime);
+        log += entry;
+        // keep last ~500 chars
+        if (log.length() > 500)
+            log = log.substring(log.length() - 500);
+        prefs.putString("log", log);
+
+        Serial.printf("[CRASH] Recorded: %s after %lu seconds uptime (total crashes: %d)\n",
+                      resetReasonStr(), lastUptime, crashCount);
+    }
+
+    prefs.putULong("uptime", 0);
+    prefs.end();
+}
+
+static void checkin(const char* event = "heartbeat") {
     String airport = configServer.GetStoredString("airport");
     String user = configServer.GetStoredString("opensky-id");
     if (airport.isEmpty()) airport = "KFHR";
     if (user.isEmpty()) user = WiFi.macAddress();
 
-    char url[256];
+    char url[448];
     snprintf(url, sizeof(url),
-             "https://george.pogsummers.com/cyradar/checkin?v=%s&airport=%s&user=%s",
-             FW_VERSION, airport.c_str(), user.c_str());
+             "https://george.pogsummers.com/cyradar/checkin?v=%s&airport=%s&user=%s&event=%s&reason=%s&heap=%u&crashes=%d&up=%lu",
+             FW_VERSION, airport.c_str(), user.c_str(),
+             event, resetReasonStr(), ESP.getFreeHeap(),
+             crashCount, millis() / 1000);
     Serial.printf("[CHECKIN] %s\n", url);
     httpfetch::get(url);
 }
@@ -192,14 +256,26 @@ void handleTouch()
     if (now - lastTouchTime < 500) return;
     lastTouchTime = now;
 
+#ifdef BOARD_CYD
     tp.x = DISPLAY_W - 1 - tp.x;
+#elif defined(BOARD_FREENOVE_S3)
+    tp.x = DISPLAY_W - 1 - tp.x;
+    tp.y = DISPLAY_H - 1 - tp.y;
+#endif
 
     if (displayMode == MODE_METAR_DETAIL) {
-        if (tp.x >= 218 && tp.y >= 206) {
+        Serial.printf("[TOUCH] METAR screen x=%d y=%d\n", tp.x, tp.y);
+        if (tp.x >= 218 && tp.y >= 198) {
             displayMode = MODE_RADAR;
             checkHttpOta();
             return;
         }
+#ifdef BOARD_FREENOVE_S3
+        if (tp.x >= 156 && tp.x < 212 && tp.y >= 198) {
+            sonar::ping();
+            return;
+        }
+#endif
         displayMode = MODE_RADAR;
         return;
     }
@@ -245,9 +321,14 @@ void handleTouch()
 void setup()
 {
     Serial.begin(115200);
+    recordCrashIfAny();
 
     tft.init();
     tft.setRotation(1);
+
+#ifdef BOARD_FREENOVE_S3
+    sonar::init();
+#endif
 
     backbuffer.setColorDepth(8);
     backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
@@ -293,7 +374,7 @@ void setup()
                       wxData.metarCount, wxData.tafCount);
         lastWxFetch = millis();
         backbuffer.deleteSprite();
-        checkin();
+        checkin("boot");
         backbuffer.setColorDepth(8);
         backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
     } else {
@@ -302,13 +383,14 @@ void setup()
         tft.setTextColor(lgfx::color888(0, 160, 0));
         tft.drawCentreString("Fetching weather...", DISPLAY_W / 2, DISPLAY_H / 2);
         backbuffer.deleteSprite();
-        checkin();
+        checkin("boot");
         fetchWeather();
         backbuffer.setColorDepth(8);
         backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
     }
 
     lastOtaCheck = millis();
+    lastCheckin = millis();
 }
 
 void drawRadarFrame()
@@ -367,6 +449,15 @@ void loop()
         fetchWeather();
         backbuffer.setColorDepth(8);
         backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
+    }
+
+    if (millis() - lastCheckin >= CHECKIN_INTERVAL) {
+        saveUptime();
+        backbuffer.deleteSprite();
+        checkin();
+        backbuffer.setColorDepth(8);
+        backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
+        lastCheckin = millis();
     }
 
     unsigned long timeout = (displayMode == MODE_TAF_MAP) ? 20000 : 15000;
