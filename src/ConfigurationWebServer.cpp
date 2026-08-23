@@ -81,7 +81,7 @@ static const char CONFIG_HTML[] PROGMEM = R"html(
 
     <fieldset>
         <legend>Known Tails</legend>
-        <textarea name="knowntails" rows="4" placeholder="N12345 N67890">%KNOWNTAILS%</textarea>
+        <textarea name="knowntails" rows="4" placeholder="N12345 N67890(John)">%KNOWNTAILS%</textarea>
     </fieldset>
 
     <fieldset>

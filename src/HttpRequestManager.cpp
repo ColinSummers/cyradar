@@ -28,6 +28,7 @@ HttpResult HttpRequestManager::Get(const String& url, const std::vector<std::pai
     const String fullUrl = url + queryParams;
 
     http.begin(secureClient, fullUrl);
+    http.setConnectTimeout(10000);
 
     for (const auto& header : headers) {
         http.addHeader(header.first, header.second);
@@ -60,6 +61,7 @@ HttpResult HttpRequestManager::Post(const String& url, const String& body, const
     HttpResult result{ false, 0, "", "" };
 
     http.begin(secureClient, url);
+    http.setConnectTimeout(10000);
 
     for (const auto& header : headers) {
         http.addHeader(header.first, header.second);
@@ -92,6 +94,7 @@ bool HttpRequestManager::GetJson(const String& url, JsonDocument& doc, const std
     const String fullUrl = url + queryParams;
 
     http.begin(secureClient, fullUrl);
+    http.setConnectTimeout(10000);
 
     for (const auto& header : headers) {
         http.addHeader(header.first, header.second);

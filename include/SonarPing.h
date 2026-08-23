@@ -4,6 +4,7 @@
 #include <driver/i2c.h>
 #include <driver/i2s.h>
 #include <math.h>
+#include "PingData.h"
 
 namespace sonar {
 
@@ -85,29 +86,23 @@ static void ping() {
         return;
     }
 
-    constexpr int SAMPLE_RATE = 16000;
-    constexpr int DURATION_MS = 300;
-    constexpr int SAMPLES = SAMPLE_RATE * DURATION_MS / 1000;
-
     int16_t buf[128];
     int idx = 0;
 
-    for (int i = 0; i < SAMPLES; i++) {
-        float t = (float)i / SAMPLE_RATE;
-        float progress = (float)i / SAMPLES;
-        float amplitude = expf(-progress * 4.0f);
-        int16_t sample = (int16_t)(sinf(2.0f * M_PI * 800.0f * t) * 30000.0f * amplitude);
-        buf[idx++] = sample;
-        buf[idx++] = sample;
+    for (int i = 0; i < PING_SAMPLE_COUNT; i++) {
+        buf[idx++] = PING_SAMPLES[i];
+        buf[idx++] = PING_SAMPLES[i];
         if (idx >= 128) {
             size_t written;
             i2s_write(I2S_NUM_0, buf, idx * sizeof(int16_t), &written, portMAX_DELAY);
             idx = 0;
         }
     }
-    while (idx < 128) buf[idx++] = 0;
-    size_t written;
-    i2s_write(I2S_NUM_0, buf, idx * sizeof(int16_t), &written, portMAX_DELAY);
+    if (idx > 0) {
+        while (idx < 128) buf[idx++] = 0;
+        size_t written;
+        i2s_write(I2S_NUM_0, buf, idx * sizeof(int16_t), &written, portMAX_DELAY);
+    }
 
     vTaskDelay(pdMS_TO_TICKS(50));
     i2s_driver_uninstall(I2S_NUM_0);

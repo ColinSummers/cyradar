@@ -366,6 +366,8 @@ void setup()
     String scanlinePref = configServer.GetStoredString("scanline");
     renderScanlines = scanlinePref.isEmpty() || scanlinePref == "true";
 
+    checkHttpOta();
+
     memset(&wxData, 0, sizeof(wxData));
     setupStationLists();
 

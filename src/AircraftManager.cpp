@@ -52,23 +52,32 @@ void AircraftManager::Initialise()
     }
 
     knownTails.clear();
-    String tails = configServer.GetStoredString("knowntails");
-    tails.replace(',', ' ');
-    tails.trim();
-    while (tails.length() > 0) {
-        int sep = tails.indexOf(' ');
-        String entry;
-        if (sep < 0) {
-            entry = tails;
-            tails = "";
-        } else {
-            entry = tails.substring(0, sep);
-            tails = tails.substring(sep + 1);
+    String raw = configServer.GetStoredString("knowntails");
+    raw.replace(',', ' ');
+    raw.trim();
+    int pos = 0;
+    while (pos < (int)raw.length()) {
+        while (pos < (int)raw.length() && raw[pos] == ' ') pos++;
+        if (pos >= (int)raw.length()) break;
+
+        int start = pos;
+        while (pos < (int)raw.length() && raw[pos] != ' ' && raw[pos] != '(') pos++;
+
+        String tail = raw.substring(start, pos);
+        String displayName;
+
+        while (pos < (int)raw.length() && raw[pos] == ' ') pos++;
+        if (pos < (int)raw.length() && raw[pos] == '(') {
+            int close = raw.indexOf(')', pos);
+            if (close > pos + 1)
+                displayName = raw.substring(pos + 1, close);
+            pos = (close >= 0) ? close + 1 : (int)raw.length();
         }
-        entry.trim();
-        entry.toUpperCase();
-        if (entry.length() > 0)
-            knownTails.push_back(entry);
+
+        tail.trim();
+        tail.toUpperCase();
+        if (tail.length() > 0)
+            knownTails.push_back({tail, displayName});
     }
 
     constexpr int MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -84,7 +93,7 @@ void AircraftManager::Initialise()
     fetchInterval = MS_PER_DAY / dailyRequestBudget;
 }
 
-bool AircraftManager::IsKnownTail(const String& callsign, const String& icao) const
+String AircraftManager::IsKnownTail(const String& callsign, const String& icao) const
 {
     String cs = callsign;
     cs.trim();
@@ -92,12 +101,12 @@ bool AircraftManager::IsKnownTail(const String& callsign, const String& icao) co
     String ic = icao;
     ic.toUpperCase();
 
-    for (const auto& tail : knownTails) {
+    for (const auto& [tail, displayName] : knownTails) {
         if (tail.length() == 0) continue;
         if (cs.indexOf(tail) >= 0 || ic.indexOf(tail) >= 0)
-            return true;
+            return displayName.length() > 0 ? displayName : tail;
     }
-    return false;
+    return "";
 }
 
 void AircraftManager::Update()
@@ -169,10 +178,11 @@ void AircraftManager::Draw(LGFX_Sprite& backbuffer)
         if (x < 0 || x >= RADAR_SIZE || y < 0 || y >= RADAR_SIZE)
             continue;
 
-        bool known = IsKnownTail(tracked.state.callsign, icao);
+        String knownName = IsKnownTail(tracked.state.callsign, icao);
+        bool known = knownName.length() > 0;
 
         if (displayInfoText)
-            DrawAircraftInfo(backbuffer, x, y, tracked, known);
+            DrawAircraftInfo(backbuffer, x, y, tracked, knownName);
 
         if (displayTriangles)
             DrawAircraftTriangle(backbuffer, x, y, tracked, known);
@@ -225,9 +235,10 @@ void AircraftManager::DrawSidebar(LGFX_Sprite& backbuffer) const
         cs.trim();
         if (cs.length() == 0) cs = icao;
 
-        bool known = IsKnownTail(tracked.state.callsign, icao);
+        String knownName = IsKnownTail(tracked.state.callsign, icao);
+        bool known = knownName.length() > 0;
         backbuffer.setTextColor(known ? YELLOW_MID : GREEN_DIM);
-        backbuffer.drawString(cs, SIDEBAR_X + 4, yOff);
+        backbuffer.drawString(known ? knownName : cs, SIDEBAR_X + 4, yOff);
         yOff += 10;
     }
 }
@@ -269,17 +280,21 @@ void AircraftManager::DrawRunway(LGFX_Sprite& backbuffer) const
     }
 }
 
-void AircraftManager::DrawAircraftInfo(LGFX_Sprite& backbuffer, int x, int y, const TrackedAircraft& tracked, bool known) const
+void AircraftManager::DrawAircraftInfo(LGFX_Sprite& backbuffer, int x, int y, const TrackedAircraft& tracked, const String& knownName) const
 {
+    bool known = knownName.length() > 0;
     backbuffer.setTextSize(1.5);
     int lineHeight = (int)(backbuffer.fontHeight()) + 2;
 
     backbuffer.setTextColor(known ? YELLOW_MID : GREEN_MID);
 
-    String cs = tracked.state.callsign;
-    cs.trim();
-    if (cs.length() > 0)
-        backbuffer.drawString(cs, x + 7, y + 7);
+    String label = knownName;
+    if (label.length() == 0) {
+        label = tracked.state.callsign;
+        label.trim();
+    }
+    if (label.length() > 0)
+        backbuffer.drawString(label, x + 7, y + 7);
 
     int altFt = (int)(tracked.state.baroAltitude * 3.28084f);
     backbuffer.drawString(String(altFt) + "'", x + 7, y + 7 + lineHeight);

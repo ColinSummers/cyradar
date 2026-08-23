@@ -20,7 +20,7 @@ private:
     String airportId;
     std::vector<RunwayInfo> runways;
     std::map<String, TrackedAircraft> trackedAircraft;
-    std::vector<String> knownTails;
+    std::vector<std::pair<String, String>> knownTails; // tail, display name
 
     bool displayInfoText = true;
     bool displayTriangles = true;
@@ -32,14 +32,14 @@ private:
     OpenSkyAuthTokenHandler& authHandler;
     HttpRequestManager& http;
 
-    bool IsKnownTail(const String& callsign, const String& icao) const;
+    String IsKnownTail(const String& callsign, const String& icao) const;
     void DrawRadarCircles(LGFX_Sprite& backbuffer) const;
     void DrawCrosshairs(LGFX_Sprite& backbuffer) const;
     void DrawCoastline(LGFX_Sprite& backbuffer) const;
     void DrawRunway(LGFX_Sprite& backbuffer) const;
     void DrawSidebar(LGFX_Sprite& backbuffer) const;
     std::pair<int, int> ProjectCoordinateToScreen(float predLat, float predLon) const;
-    void DrawAircraftInfo(LGFX_Sprite& backbuffer, int x, int y, const TrackedAircraft& tracked, bool known) const;
+    void DrawAircraftInfo(LGFX_Sprite& backbuffer, int x, int y, const TrackedAircraft& tracked, const String& knownName) const;
     void DrawAircraftTriangle(LGFX_Sprite& backbuffer, int x, int y, const TrackedAircraft& tracked, bool known) const;
 
 public:
