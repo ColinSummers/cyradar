@@ -57,7 +57,6 @@ static const char CONFIG_HTML[] PROGMEM = R"html(
         <div class="row">
             <label><span>Sweep:</span><input name="scanline" type="checkbox" %SCANLINE%></label>
             <label><span>Info text:</span><input name="infotext" type="checkbox" %INFOTEXT%></label>
-            <label><span>Triangles:</span><input name="triangle" type="checkbox" %TRIANGLE%></label>
         </div>
     </fieldset>
 
@@ -196,16 +195,13 @@ void ConfigurationWebServer::ApplyDefaults() {
         prefs.putString("scanline", "true");
     if (prefs.getString("infotext", "").isEmpty())
         prefs.putString("infotext", "true");
-    if (prefs.getString("triangle", "").isEmpty())
-        prefs.putString("triangle", "true");
-
     prefs.end();
 }
 
 void ConfigurationWebServer::Initialise() {
     ApplyDefaults();
 
-    if (!MDNS.begin("kfhr-radar")) {
+    if (!MDNS.begin("cyradar")) {
         Serial.println("[WARN] Failed to start mDNS");
     }
 
@@ -225,7 +221,6 @@ void ConfigurationWebServer::Initialise() {
         const String runwaysJson     = prefs.getString("runways", "[]");
         const String scanlineEnabled = prefs.getString("scanline", "true");
         const String infoTextEnabled = prefs.getString("infotext", "true");
-        const String triangleEnabled = prefs.getString("triangle", "true");
         prefs.end();
 
         std::fill(openskySecret.begin(), openskySecret.end(), '*');
@@ -236,7 +231,7 @@ void ConfigurationWebServer::Initialise() {
             (const uint8_t*)CONFIG_HTML, sizeof(CONFIG_HTML) - 1,
             [airport, latitude, longitude, diameter, maxalt, openskyClientId, openskySecret,
              knownTails, metars, tafs, runwaysEsc,
-             scanlineEnabled, infoTextEnabled, triangleEnabled]
+             scanlineEnabled, infoTextEnabled]
             (const String& var) -> String {
                 if (var == "AIRPORT")        return airport;
                 if (var == "LATITUDE")       return latitude;
@@ -251,7 +246,6 @@ void ConfigurationWebServer::Initialise() {
                 if (var == "RUNWAYS_ESC")    return runwaysEsc;
                 if (var == "SCANLINE")       return scanlineEnabled == "true" ? "checked" : "";
                 if (var == "INFOTEXT")       return infoTextEnabled == "true" ? "checked" : "";
-                if (var == "TRIANGLE")       return triangleEnabled == "true" ? "checked" : "";
                 if (var == "FW_VER")         return FW_VERSION;
                 if (var == "BUILD_DATE")     return __DATE__;
                 if (var == "BUILD_TIME")     return __TIME__;
@@ -291,7 +285,6 @@ void ConfigurationWebServer::Initialise() {
         }
 
         prefs.putString("scanline", request->hasParam("scanline", true) ? "true" : "false");
-        prefs.putString("triangle", request->hasParam("triangle", true) ? "true" : "false");
         prefs.putString("infotext", request->hasParam("infotext", true) ? "true" : "false");
         prefs.end();
 

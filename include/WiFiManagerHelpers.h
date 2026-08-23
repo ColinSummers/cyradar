@@ -4,7 +4,7 @@
 
 namespace WiFiManagerHelpers
 {
-    constexpr const char* WiFiManagerName = "CheapYellowRadarWiFi";
+    constexpr const char* WiFiManagerName = "CYRadarWiFi";
 
     static void ConfigureWiFiManager(WiFiManager& wm, LGFX& tft)
     {
@@ -16,9 +16,12 @@ namespace WiFiManagerHelpers
             tft.setTextColor(lgfx::color888(0, 255, 0));
 
             const int lineHeight = tft.fontHeight() + 10;
-            tft.drawCentreString("- SETUP -", 160, 100);
-            tft.drawCentreString("Connect to WiFi:", 160, 100 + lineHeight);
-            tft.drawCentreString(WiFiManagerName, 160, 100 + lineHeight * 2);
+            int y = 80;
+            tft.drawCentreString("- SETUP -", 160, y);
+            tft.drawCentreString("Connect to WiFi:", 160, y + lineHeight);
+            tft.drawCentreString(WiFiManagerName, 160, y + lineHeight * 2);
+            tft.setTextColor(lgfx::color888(0, 128, 0));
+            tft.drawCentreString("Then open 192.168.4.1", 160, y + lineHeight * 3 + 8);
         });
     }
 }

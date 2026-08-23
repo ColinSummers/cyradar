@@ -28,9 +28,7 @@ void AircraftManager::Initialise()
     maxAltMeters = maxAltFt * 0.3048f;
 
     const String renderText = configServer.GetStoredString("infotext");
-    const String renderTris = configServer.GetStoredString("triangle");
     if (!renderText.isEmpty()) displayInfoText = renderText == "true";
-    if (!renderTris.isEmpty()) displayTriangles = renderTris == "true";
 
     runways.clear();
     String rwyJson = configServer.GetStoredString("runways");
@@ -184,10 +182,7 @@ void AircraftManager::Draw(LGFX_Sprite& backbuffer)
         if (displayInfoText)
             DrawAircraftInfo(backbuffer, x, y, tracked, knownName);
 
-        if (displayTriangles)
-            DrawAircraftTriangle(backbuffer, x, y, tracked, known);
-        else
-            backbuffer.fillCircle(x, y, 3, known ? YELLOW_BRIGHT : GREEN_BRIGHT);
+        DrawAircraftTriangle(backbuffer, x, y, tracked, known);
     }
 }
 

@@ -4,6 +4,7 @@
 #include <HTTPUpdate.h>
 #include <WiFiClientSecure.h>
 #include <esp_system.h>
+#include <esp_heap_caps.h>
 
 #include <Preferences.h>
 
@@ -47,6 +48,43 @@ bool renderScanlines = true;
 enum DisplayMode { MODE_RADAR, MODE_METAR_DETAIL, MODE_WEATHER_MAP, MODE_TAF_MAP };
 static DisplayMode displayMode = MODE_RADAR;
 static unsigned long modeStartTime = 0;
+
+static void saveUptime();
+static int spriteFailCount = 0;
+static unsigned long lastSpriteFailMs = 0;
+
+static bool recreateSprite(const char* caller) {
+    backbuffer.setColorDepth(8);
+    bool ok = backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
+    size_t freeHeap = ESP.getFreeHeap();
+    size_t largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+
+    if (!ok) {
+        spriteFailCount++;
+        lastSpriteFailMs = millis();
+        Serial.printf("[SPRITE FAIL] %s: createSprite failed (#%d) heap=%u largest=%u\n",
+                      caller, spriteFailCount, freeHeap, largestBlock);
+
+        if (spriteFailCount >= 5) {
+            Serial.printf("[SPRITE FAIL] %d consecutive failures, rebooting\n", spriteFailCount);
+            saveUptime();
+            ESP.restart();
+        }
+    } else {
+        if (spriteFailCount > 0)
+            Serial.printf("[SPRITE OK] %s: recovered after %d failures, heap=%u largest=%u\n",
+                          caller, spriteFailCount, freeHeap, largestBlock);
+        spriteFailCount = 0;
+    }
+    return ok;
+}
+
+static void deleteSprite(const char* caller) {
+    backbuffer.deleteSprite();
+    Serial.printf("[SPRITE] %s: deleted, heap=%u largest=%u\n",
+                  caller, ESP.getFreeHeap(),
+                  heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+}
 
 static WxData wxData;
 static const char* tafTopRow[4];
@@ -118,12 +156,13 @@ static void checkin(const char* event = "heartbeat") {
     if (airport.isEmpty()) airport = "KFHR";
     if (user.isEmpty()) user = WiFi.macAddress();
 
-    char url[448];
+    char url[512];
     snprintf(url, sizeof(url),
-             "https://george.pogsummers.com/cyradar/checkin?v=%s&airport=%s&user=%s&event=%s&reason=%s&heap=%u&crashes=%d&up=%lu",
+             "https://george.pogsummers.com/cyradar/checkin?v=%s&airport=%s&user=%s&event=%s&reason=%s&heap=%u&largest=%u&crashes=%d&up=%lu&spritefails=%d",
              FW_VERSION, airport.c_str(), user.c_str(),
              event, resetReasonStr(), ESP.getFreeHeap(),
-             crashCount, millis() / 1000);
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+             crashCount, millis() / 1000, spriteFailCount);
     Serial.printf("[CHECKIN] %s\n", url);
     httpfetch::get(url);
 }
@@ -198,7 +237,7 @@ void showOtaStatus(const char* msg)
 bool checkHttpOta()
 {
     showOtaStatus("Checking for updates...");
-    backbuffer.deleteSprite();
+    deleteSprite("OTA");
     Serial.printf("[OTA] Checking for update... (heap: %u)\n", ESP.getFreeHeap());
 
     bool updated = false;
@@ -241,8 +280,7 @@ bool checkHttpOta()
         client.end();
     }
 
-    backbuffer.setColorDepth(8);
-    backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
+    recreateSprite("OTA");
     return updated;
 }
 
@@ -375,20 +413,18 @@ void setup()
         Serial.printf("[WX] Loaded cache: %d METARs, %d TAFs\n",
                       wxData.metarCount, wxData.tafCount);
         lastWxFetch = millis();
-        backbuffer.deleteSprite();
+        deleteSprite("boot-cached");
         checkin("boot");
-        backbuffer.setColorDepth(8);
-        backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
+        recreateSprite("boot-cached");
     } else {
         tft.fillScreen(lgfx::color888(0, 0, 0));
         tft.setTextSize(1);
         tft.setTextColor(lgfx::color888(0, 160, 0));
         tft.drawCentreString("Fetching weather...", DISPLAY_W / 2, DISPLAY_H / 2);
-        backbuffer.deleteSprite();
+        deleteSprite("boot-fresh");
         checkin("boot");
         fetchWeather();
-        backbuffer.setColorDepth(8);
-        backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
+        recreateSprite("boot-fresh");
     }
 
     lastOtaCheck = millis();
@@ -398,11 +434,9 @@ void setup()
 void drawRadarFrame()
 {
     if (aircraftManager.NeedsFetch()) {
-        backbuffer.deleteSprite();
+        deleteSprite("opensky");
         aircraftManager.Update();
-        backbuffer.setColorDepth(8);
-        if (!backbuffer.createSprite(DISPLAY_W, DISPLAY_H))
-            Serial.printf("[WARN] createSprite failed, heap: %u\n", ESP.getFreeHeap());
+        recreateSprite("opensky");
     }
 
     backbuffer.fillScreen(lgfx::color888(0, 0, 0));
@@ -447,18 +481,16 @@ void loop()
     }
 
     if (millis() - lastWxFetch >= WX_FETCH_INTERVAL) {
-        backbuffer.deleteSprite();
+        deleteSprite("wx-fetch");
         fetchWeather();
-        backbuffer.setColorDepth(8);
-        backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
+        recreateSprite("wx-fetch");
     }
 
     if (millis() - lastCheckin >= CHECKIN_INTERVAL) {
         saveUptime();
-        backbuffer.deleteSprite();
+        deleteSprite("checkin");
         checkin();
-        backbuffer.setColorDepth(8);
-        backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
+        recreateSprite("checkin");
         lastCheckin = millis();
     }
 
