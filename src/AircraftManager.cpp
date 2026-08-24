@@ -1,5 +1,7 @@
 #include "AircraftManager.h"
 #include "RadarLayout.h"
+#include "KFHR.h"
+#include "KPAE.h"
 
 #include <ArduinoJson.h>
 #include <WiFi.h>
@@ -29,6 +31,8 @@ void AircraftManager::Initialise()
 
     const String renderText = configServer.GetStoredString("infotext");
     if (!renderText.isEmpty()) displayInfoText = renderText == "true";
+
+    classDRadiusNm = configServer.GetStoredString("classd").toFloat();
 
     runways.clear();
     String rwyJson = configServer.GetStoredString("runways");
@@ -164,6 +168,8 @@ void AircraftManager::Draw(LGFX_Sprite& backbuffer)
     DrawCrosshairs(backbuffer);
     DrawCoastline(backbuffer);
     DrawRunway(backbuffer);
+    DrawClassD(backbuffer);
+    DrawNearbyRunways(backbuffer);
     DrawSidebar(backbuffer);
 
     for (auto& [icao, tracked] : trackedAircraft) {
@@ -255,11 +261,26 @@ std::pair<int, int> AircraftManager::ProjectCoordinateToScreen(float predLat, fl
 
 void AircraftManager::DrawCoastline(LGFX_Sprite& backbuffer) const
 {
+    const CoastSegment* segments = nullptr;
+    int segmentCount = 0;
+
+    if (airportId == "KPAE") {
+        segments = KPAE_COASTLINE;
+        segmentCount = KPAE_COASTLINE_SEGMENTS;
+    } else if (airportId == "KFHR") {
+        segments = KFHR_COASTLINE;
+        segmentCount = KFHR_COASTLINE_SEGMENTS;
+    }
+
+    if (!segments) return;
+
     const uint32_t coastColor = lgfx::color888(40, 80, 120);
-    for (int i = 0; i < SAN_JUAN_COASTLINE_COUNT - 1; i++) {
-        auto [x1, y1] = ProjectCoordinateToScreen(SAN_JUAN_COASTLINE[i].lat, SAN_JUAN_COASTLINE[i].lon);
-        auto [x2, y2] = ProjectCoordinateToScreen(SAN_JUAN_COASTLINE[i + 1].lat, SAN_JUAN_COASTLINE[i + 1].lon);
-        backbuffer.drawLine(x1, y1, x2, y2, coastColor);
+    for (int s = 0; s < segmentCount; s++) {
+        for (int i = 0; i < segments[s].count - 1; i++) {
+            auto [x1, y1] = ProjectCoordinateToScreen(segments[s].points[i].lat, segments[s].points[i].lon);
+            auto [x2, y2] = ProjectCoordinateToScreen(segments[s].points[i + 1].lat, segments[s].points[i + 1].lon);
+            backbuffer.drawLine(x1, y1, x2, y2, coastColor);
+        }
     }
 }
 
@@ -272,6 +293,45 @@ void AircraftManager::DrawRunway(LGFX_Sprite& backbuffer) const
         backbuffer.drawLine(x1, y1, x2, y2, rwyColor);
         backbuffer.drawLine(x1 - 1, y1, x2 - 1, y2, rwyColor);
         backbuffer.drawLine(x1 + 1, y1, x2 + 1, y2, rwyColor);
+    }
+}
+
+void AircraftManager::DrawClassD(LGFX_Sprite& backbuffer) const
+{
+    if (classDRadiusNm <= 0) return;
+
+    const uint32_t color = lgfx::color888(50, 100, 200);
+    float pixelR = (classDRadiusNm / (displayRad * 120.0f)) * RADAR_SIZE * 0.5f;
+    constexpr int DASHES = 36;
+    for (int i = 0; i < DASHES; i++) {
+        float a1 = i * 2.0f * M_PI / DASHES;
+        float a2 = (i + 0.5f) * 2.0f * M_PI / DASHES;
+        constexpr int STEPS = 4;
+        for (int j = 0; j < STEPS; j++) {
+            float ta = a1 + (a2 - a1) * j / STEPS;
+            float tb = a1 + (a2 - a1) * (j + 1) / STEPS;
+            backbuffer.drawLine(
+                RADAR_CENTRE + cosf(ta) * pixelR, RADAR_CENTRE + sinf(ta) * pixelR,
+                RADAR_CENTRE + cosf(tb) * pixelR, RADAR_CENTRE + sinf(tb) * pixelR,
+                color);
+        }
+    }
+}
+
+void AircraftManager::DrawNearbyRunways(LGFX_Sprite& backbuffer) const
+{
+    const uint32_t rwyColor = lgfx::color888(50, 100, 200);
+    for (int i = 0; i < PNW_RUNWAY_COUNT; i++) {
+        float midLat = (PNW_RUNWAYS[i].lat1 + PNW_RUNWAYS[i].lat2) * 0.5f;
+        float midLon = (PNW_RUNWAYS[i].lon1 + PNW_RUNWAYS[i].lon2) * 0.5f;
+        float dLat = midLat - (float)lat;
+        float dLon = midLon - (float)lon;
+        if (dLat * dLat + dLon * dLon < 0.0004f) continue;
+        auto [x1, y1] = ProjectCoordinateToScreen(PNW_RUNWAYS[i].lat1, PNW_RUNWAYS[i].lon1);
+        auto [x2, y2] = ProjectCoordinateToScreen(PNW_RUNWAYS[i].lat2, PNW_RUNWAYS[i].lon2);
+        if ((x1 < 0 || x1 >= RADAR_SIZE) && (x2 < 0 || x2 >= RADAR_SIZE)) continue;
+        if ((y1 < 0 || y1 >= RADAR_SIZE) && (y2 < 0 || y2 >= RADAR_SIZE)) continue;
+        backbuffer.drawLine(x1, y1, x2, y2, rwyColor);
     }
 }
 

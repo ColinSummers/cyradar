@@ -23,6 +23,7 @@ private:
     std::vector<std::pair<String, String>> knownTails; // tail, display name
 
     bool displayInfoText = true;
+    float classDRadiusNm = 0;
 
     unsigned long fetchInterval = 0;
     unsigned long lastFetch = 999999;
@@ -36,6 +37,8 @@ private:
     void DrawCrosshairs(LGFX_Sprite& backbuffer) const;
     void DrawCoastline(LGFX_Sprite& backbuffer) const;
     void DrawRunway(LGFX_Sprite& backbuffer) const;
+    void DrawClassD(LGFX_Sprite& backbuffer) const;
+    void DrawNearbyRunways(LGFX_Sprite& backbuffer) const;
     void DrawSidebar(LGFX_Sprite& backbuffer) const;
     std::pair<int, int> ProjectCoordinateToScreen(float predLat, float predLon) const;
     void DrawAircraftInfo(LGFX_Sprite& backbuffer, int x, int y, const TrackedAircraft& tracked, const String& knownName) const;

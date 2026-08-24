@@ -49,7 +49,7 @@ OBJS := $(patsubst %.cpp,$(BUILD)/%.o,$(notdir $(LGFX_SRCS))) \
 	$(patsubst %.cpp,$(BUILD)/%.o,$(notdir $(SIM_SRCS))) \
 	$(patsubst %.c,$(BUILD)/%.o,$(notdir $(SIM_C_SRCS)))
 
-TARGET := $(BUILD)/kfhr-sim
+TARGET := $(BUILD)/cyradar-sim
 
 .PHONY: all clean run
 
@@ -87,7 +87,7 @@ $(BUILD)/%.o: %.c | $(BUILD)
 	$(CC) -std=c11 -O2 -c -o $@ $<
 
 run: $(TARGET)
-	cd $(PROJECT_ROOT) && sim/$(BUILD)/kfhr-sim
+	cd $(PROJECT_ROOT) && sim/$(BUILD)/cyradar-sim
 
 clean:
 	rm -rf $(BUILD)

@@ -126,6 +126,14 @@ static void recordCrashIfAny() {
     prefs.begin("crashlog", false);
 
     esp_reset_reason_t reason = esp_reset_reason();
+    String lastVersion = prefs.getString("fwver", "");
+    if (lastVersion != FW_VERSION) {
+        Serial.printf("[INFO] Firmware changed %s -> %s, resetting crash count\n",
+                      lastVersion.c_str(), FW_VERSION);
+        prefs.putInt("count", 0);
+        prefs.putString("log", "");
+        prefs.putString("fwver", FW_VERSION);
+    }
     crashCount = prefs.getInt("count", 0);
 
     if (isCrashReason(reason)) {

@@ -121,8 +121,9 @@ static void wxDrawMetarDetail(LGFX_Sprite& bb, const WxData& wx,
 
     int ageMin = (int)((nowMs - wx.fetchTime) / 60000);
     snprintf(buf, sizeof(buf), "WX: %d min ago", ageMin);
-    bb.setTextColor(lgfx::color888(0, 60, 0));
+    bb.setTextColor(lgfx::color888(0, 80, 0));
     bb.drawString(buf, 4, DISPLAY_H - 22);
+    bb.setTextColor(lgfx::color888(0, 120, 0));
     bb.drawString(versionStr, 4, DISPLAY_H - 10);
 }
 

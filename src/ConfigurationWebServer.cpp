@@ -45,6 +45,9 @@ static const char CONFIG_HTML[] PROGMEM = R"html(
         <label><span>Ignore above (ft MSL):</span>
             <input name="maxalt" type="number" min="500" step="500" max="60000" value="%MAXALT%">
         </label>
+        <label><span>Class D radius (nm):</span>
+            <input name="classd" type="number" min="0" step="0.5" max="10" value="%CLASSD%">
+        </label>
     </fieldset>
 
     <input name="runways" type="hidden" value="%RUNWAYS_ESC%">
@@ -213,6 +216,7 @@ void ConfigurationWebServer::Initialise() {
         const String longitude       = prefs.getString("longitude", "");
         const String diameter        = prefs.getString("diameter", "8");
         const String maxalt          = prefs.getString("maxalt", "8000");
+        const String classd          = prefs.getString("classd", "0");
         const String openskyClientId = prefs.getString("opensky-id", "");
         String openskySecret         = prefs.getString("opensky-secret", "");
         const String knownTails      = prefs.getString("knowntails", "");
@@ -229,7 +233,7 @@ void ConfigurationWebServer::Initialise() {
         AsyncWebServerResponse* response = request->beginResponse(
             200, "text/html",
             (const uint8_t*)CONFIG_HTML, sizeof(CONFIG_HTML) - 1,
-            [airport, latitude, longitude, diameter, maxalt, openskyClientId, openskySecret,
+            [airport, latitude, longitude, diameter, maxalt, classd, openskyClientId, openskySecret,
              knownTails, metars, tafs, runwaysEsc,
              scanlineEnabled, infoTextEnabled]
             (const String& var) -> String {
@@ -238,6 +242,7 @@ void ConfigurationWebServer::Initialise() {
                 if (var == "LONGITUDE")      return longitude;
                 if (var == "DIAMETER")       return diameter;
                 if (var == "MAXALT")         return maxalt;
+                if (var == "CLASSD")         return classd;
                 if (var == "OPENSKY_ID")     return openskyClientId;
                 if (var == "OPENSKY_SECRET") return openskySecret;
                 if (var == "KNOWNTAILS")     return knownTails;
@@ -270,6 +275,7 @@ void ConfigurationWebServer::Initialise() {
         TrySaveParam("longitude");
         TrySaveParam("diameter");
         TrySaveParam("maxalt");
+        TrySaveParam("classd");
         TrySaveParam("opensky-id");
         TrySaveParam("knowntails");
         TrySaveParam("metars");
