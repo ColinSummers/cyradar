@@ -360,7 +360,7 @@ void drawFrame() {
     switch (displayMode) {
         case MODE_METAR_DETAIL: {
             char verBuf[40];
-            snprintf(verBuf, sizeof(verBuf), "v1.3.2  sim");
+            snprintf(verBuf, sizeof(verBuf), "v1.3.3  sim");
             wxDrawMetarDetail(backbuffer, wxData, simAirport->id,
                               simAirport->runways, simAirport->numRunways,
                               verBuf, millis());
