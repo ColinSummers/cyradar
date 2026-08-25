@@ -211,6 +211,7 @@ static void parseTAFs(const char* json, WxData& wx, const char* stationList) {
                     memset(&tp, 0, sizeof(tp));
 
                     long from = getLong(period, "timeFrom");
+                    tp.timeFrom = from;
                     timeLabel(from, tp.label, sizeof(tp.label));
 
                     char change[16];

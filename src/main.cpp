@@ -395,6 +395,8 @@ void setup()
 
     wm.autoConnect(WiFiManagerHelpers::WiFiManagerName);
 
+    configTzTime("PST8PDT,M3.2.0,M11.1.0", "pool.ntp.org");
+
     Serial.print("[INFO] WiFi connected, IP: ");
     Serial.println(WiFi.localIP());
     Serial.printf("[INFO] Firmware version: %s\n", FW_VERSION);

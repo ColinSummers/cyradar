@@ -23,6 +23,7 @@ struct WxTafPeriod {
     char flightCat[8];
     char label[8];
     bool isTempo;
+    long timeFrom;
 };
 
 struct WxTaf {

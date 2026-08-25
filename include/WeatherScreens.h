@@ -1,7 +1,9 @@
 #pragma once
 
 #include <LovyanGFX.hpp>
+#include <ctime>
 #include "WeatherData.h"
+#include "WeatherParse.h"
 #include "Overlays.h"
 #include "RadarLayout.h"
 
@@ -173,23 +175,63 @@ static void wxDrawTafMap(LGFX_Sprite& bb, const WxData& wx,
     const int topLabelY = 4;
     const int botLabelY = DISPLAY_H / 2 + 2;
     const int dotR = 4;
-    const int dotSpacing = 12;
+    const int minGap = 12;
+
+    const int topDotY0 = topLabelY + 14;
+    const int topDotY1 = botLabelY - 8;
+    const int botDotY0 = botLabelY + 14;
+    const int botDotY1 = DISPLAY_H - 18;
 
     bb.setTextSize(1);
 
-    auto drawColumn = [&](int cx, const char* icao, int anchorY) {
+    long now = (long)time(NULL);
+
+    // Find latest TAF period time across all stations
+    long latestTime = 0;
+    const char* allStations[8];
+    for (int i = 0; i < 4; i++) {
+        allStations[i] = topRow[i];
+        allStations[i + 4] = botRow[i];
+    }
+    for (int s = 0; s < 8; s++) {
+        const WxTaf* taf = wx.findTaf(allStations[s]);
+        if (!taf) continue;
+        for (int p = 0; p < taf->periodCount; p++) {
+            if (taf->periods[p].timeFrom > latestTime)
+                latestTime = taf->periods[p].timeFrom;
+        }
+    }
+
+    long timeRange = latestTime - now;
+    if (timeRange <= 0) timeRange = 1;
+
+    char nowLabel[8];
+    wxparse::timeLabel(now, nowLabel, sizeof(nowLabel));
+
+    auto drawColumn = [&](int cx, const char* icao, int dotY0, int dotY1) {
+        int pixelRange = dotY1 - dotY0;
+
+        bb.fillCircle(cx, dotY0, dotR, wxFlightCatColor(wx.findMetarCat(icao)));
+        bb.setTextColor(lgfx::color888(0, 160, 0));
+        bb.drawString(nowLabel, cx + dotR + 4, dotY0 - 4);
+
         const WxTaf* taf = wx.findTaf(icao);
-        if (taf && taf->periodCount > 0) {
-            for (int p = 0; p < taf->periodCount; p++) {
-                int dy = anchorY + p * dotSpacing;
-                bb.fillCircle(cx, dy, dotR, wxFlightCatColor(taf->periods[p].flightCat));
-                if (taf->periods[p].isTempo)
-                    bb.drawCircle(cx, dy, dotR + 1, lgfx::color888(120, 120, 120));
-                bb.setTextColor(lgfx::color888(0, 160, 0));
-                bb.drawString(taf->periods[p].label, cx + dotR + 4, dy - 4);
-            }
-        } else {
-            bb.fillCircle(cx, anchorY, dotR, wxFlightCatColor(wx.findMetarCat(icao)));
+        if (!taf) return;
+
+        int prevDy = dotY0;
+        for (int p = 0; p < taf->periodCount; p++) {
+            if (taf->periods[p].timeFrom <= now) continue;
+
+            float frac = (float)(taf->periods[p].timeFrom - now) / timeRange;
+            int dy = dotY0 + (int)(frac * pixelRange);
+            if (dy < prevDy + minGap) dy = prevDy + minGap;
+            prevDy = dy;
+
+            bb.fillCircle(cx, dy, dotR, wxFlightCatColor(taf->periods[p].flightCat));
+            if (taf->periods[p].isTempo)
+                bb.drawCircle(cx, dy, dotR + 1, lgfx::color888(120, 120, 120));
+            bb.setTextColor(lgfx::color888(0, 160, 0));
+            bb.drawString(taf->periods[p].label, cx + dotR + 4, dy - 4);
         }
     };
 
@@ -198,16 +240,16 @@ static void wxDrawTafMap(LGFX_Sprite& bb, const WxData& wx,
 
         bb.setTextColor(lgfx::color888(0, 160, 0));
         bb.drawCentreString(topRow[c] + 1, cx, topLabelY);
-        drawColumn(cx, topRow[c], topLabelY + 14);
+        drawColumn(cx, topRow[c], topDotY0, topDotY1);
 
         bb.setTextColor(lgfx::color888(0, 160, 0));
         bb.drawCentreString(botRow[c] + 1, cx, botLabelY);
-        drawColumn(cx, botRow[c], botLabelY + 14);
+        drawColumn(cx, botRow[c], botDotY0, botDotY1);
     }
 
     int ageMin = (int)((nowMs - wx.fetchTime) / 60000);
     char buf[32];
     snprintf(buf, sizeof(buf), "TAF  %d min ago", ageMin);
-    bb.setTextColor(lgfx::color888(0, 60, 0));
-    bb.drawString(buf, 4, DISPLAY_H - 10);
+    bb.setTextColor(lgfx::color888(0, 160, 0));
+    bb.drawString(buf, 4, DISPLAY_H - 14);
 }
