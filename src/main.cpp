@@ -304,7 +304,9 @@ void handleTouch()
 
 #if defined(BOARD_CYD)
     tp.x = DISPLAY_W - 1 - tp.x;
-#elif defined(BOARD_CCYD) || defined(BOARD_FREENOVE_S3)
+#elif defined(BOARD_CCYD)
+    tp.y = DISPLAY_H - 1 - tp.y;
+#elif defined(BOARD_FREENOVE_S3)
     tp.x = DISPLAY_W - 1 - tp.x;
     tp.y = DISPLAY_H - 1 - tp.y;
 #endif
