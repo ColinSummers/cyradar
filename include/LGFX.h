@@ -4,6 +4,8 @@
 // Desktop sim — handled by sim_include/LGFX.h
 #elif defined(BOARD_FREENOVE_S3)
 #include "LGFX_FreenoveS3.h"
+#elif defined(BOARD_CCYD)
+#include "LGFX_CCYD.h"
 #else
 #include "LGFX_CYD.h"
 #endif
