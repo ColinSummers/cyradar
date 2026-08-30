@@ -1,6 +1,7 @@
 #pragma once
 
 #include <WiFiManager.h>
+#include "Config.h"
 
 namespace WiFiManagerHelpers
 {
@@ -22,6 +23,9 @@ namespace WiFiManagerHelpers
             tft.drawCentreString(WiFiManagerName, 160, y + lineHeight * 2);
             tft.setTextColor(lgfx::color888(0, 128, 0));
             tft.drawCentreString("Then open 192.168.4.1", 160, y + lineHeight * 3 + 8);
+            char verBuf[32];
+            snprintf(verBuf, sizeof(verBuf), "v%s", FW_VERSION);
+            tft.drawCentreString(verBuf, 160, y + lineHeight * 4 + 16);
         });
     }
 }

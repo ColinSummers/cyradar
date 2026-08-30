@@ -6,14 +6,16 @@
 class ConfigurationWebServer {
 private:
     AsyncWebServer server;
+    AsyncWebServer altServer;
     Preferences prefs;
+    void registerRoutes(AsyncWebServer& s);
 
 public:
     bool shouldRestart = false;
     unsigned long restartAt = 0;
     unsigned long configActiveUntil = 0;
 
-    ConfigurationWebServer(int port = 80) : server(port), prefs() {}
+    ConfigurationWebServer() : server(80), altServer(8080), prefs() {}
 
     void Initialise();
     void ApplyDefaults();

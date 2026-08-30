@@ -201,14 +201,8 @@ void ConfigurationWebServer::ApplyDefaults() {
     prefs.end();
 }
 
-void ConfigurationWebServer::Initialise() {
-    ApplyDefaults();
-
-    if (!MDNS.begin("cyradar")) {
-        Serial.println("[WARN] Failed to start mDNS");
-    }
-
-    server.on("/", HTTP_GET, [&](AsyncWebServerRequest* request) {
+void ConfigurationWebServer::registerRoutes(AsyncWebServer& s) {
+    s.on("/", HTTP_GET, [&](AsyncWebServerRequest* request) {
         configActiveUntil = millis() + 60000;
         prefs.begin("config", true);
         const String airport         = prefs.getString("airport", "KFHR");
@@ -260,7 +254,7 @@ void ConfigurationWebServer::Initialise() {
         request->send(response);
     });
 
-    server.on("/save", HTTP_POST, [&](AsyncWebServerRequest* request) {
+    s.on("/save", HTTP_POST, [&](AsyncWebServerRequest* request) {
         auto TrySaveParam = [request, this](const char* paramName) {
             const auto* param = request->getParam(paramName, true);
             if (param == nullptr) return false;
@@ -299,7 +293,18 @@ void ConfigurationWebServer::Initialise() {
         restartAt = millis() + 500;
     });
 
-    server.begin();
+    s.begin();
+}
+
+void ConfigurationWebServer::Initialise() {
+    ApplyDefaults();
+
+    if (!MDNS.begin("cyradar")) {
+        Serial.println("[WARN] Failed to start mDNS");
+    }
+
+    registerRoutes(server);
+    registerRoutes(altServer);
 }
 
 const String ConfigurationWebServer::GetStoredString(const char* key)

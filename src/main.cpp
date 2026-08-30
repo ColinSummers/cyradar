@@ -481,7 +481,7 @@ void loop()
         backbuffer.drawCentreString("Configuration", DISPLAY_W / 2, DISPLAY_H / 2 - 16);
         backbuffer.drawCentreString("in flux...", DISPLAY_W / 2, DISPLAY_H / 2 + 4);
         backbuffer.setTextSize(1);
-        backbuffer.setTextColor(lgfx::color888(0, 80, 0));
+        backbuffer.setTextColor(lgfx::color888(0, 200, 0));
         backbuffer.drawCentreString(WiFi.localIP().toString(), DISPLAY_W / 2, DISPLAY_H / 2 + 28);
         backbuffer.pushSprite(0, 0);
         return;
