@@ -2,6 +2,7 @@
 #include "RadarLayout.h"
 #include "KFHR.h"
 #include "KPAE.h"
+#include "KSMO.h"
 
 #include <ArduinoJson.h>
 #include <WiFi.h>
@@ -130,10 +131,10 @@ void AircraftManager::Update()
         "https://opensky-network.org/api/states/all",
         doc,
         {
-          {"lamin", String(lat - rad)},
-          {"lamax", String(lat + rad)},
-          {"lomin", String(lon - lonRad)},
-          {"lomax", String(lon + lonRad)}
+          {"lamin", String(lat - rad, 4)},
+          {"lamax", String(lat + rad, 4)},
+          {"lomin", String(lon - lonRad, 4)},
+          {"lomax", String(lon + lonRad, 4)}
         },
         headers
     )) return;
@@ -270,6 +271,9 @@ void AircraftManager::DrawCoastline(LGFX_Sprite& backbuffer) const
     } else if (airportId == "KFHR") {
         segments = KFHR_COASTLINE;
         segmentCount = KFHR_COASTLINE_SEGMENTS;
+    } else if (airportId == "KSMO" || airportId == "KTOA") {
+        segments = KSMO_COASTLINE;
+        segmentCount = KSMO_COASTLINE_SEGMENTS;
     }
 
     if (!segments) return;
@@ -320,15 +324,22 @@ void AircraftManager::DrawClassD(LGFX_Sprite& backbuffer) const
 
 void AircraftManager::DrawNearbyRunways(LGFX_Sprite& backbuffer) const
 {
+    const NearbyRunway* rwys = PNW_RUNWAYS;
+    int count = PNW_RUNWAY_COUNT;
+    if (airportId == "KSMO" || airportId == "KTOA") {
+        rwys = LA_RUNWAYS;
+        count = LA_RUNWAY_COUNT;
+    }
+
     const uint32_t rwyColor = lgfx::color888(50, 100, 200);
-    for (int i = 0; i < PNW_RUNWAY_COUNT; i++) {
-        float midLat = (PNW_RUNWAYS[i].lat1 + PNW_RUNWAYS[i].lat2) * 0.5f;
-        float midLon = (PNW_RUNWAYS[i].lon1 + PNW_RUNWAYS[i].lon2) * 0.5f;
+    for (int i = 0; i < count; i++) {
+        float midLat = (rwys[i].lat1 + rwys[i].lat2) * 0.5f;
+        float midLon = (rwys[i].lon1 + rwys[i].lon2) * 0.5f;
         float dLat = midLat - (float)lat;
         float dLon = midLon - (float)lon;
         if (dLat * dLat + dLon * dLon < 0.0004f) continue;
-        auto [x1, y1] = ProjectCoordinateToScreen(PNW_RUNWAYS[i].lat1, PNW_RUNWAYS[i].lon1);
-        auto [x2, y2] = ProjectCoordinateToScreen(PNW_RUNWAYS[i].lat2, PNW_RUNWAYS[i].lon2);
+        auto [x1, y1] = ProjectCoordinateToScreen(rwys[i].lat1, rwys[i].lon1);
+        auto [x2, y2] = ProjectCoordinateToScreen(rwys[i].lat2, rwys[i].lon2);
         if ((x1 < 0 || x1 >= RADAR_SIZE) && (x2 < 0 || x2 >= RADAR_SIZE)) continue;
         if ((y1 < 0 || y1 >= RADAR_SIZE) && (y2 < 0 || y2 >= RADAR_SIZE)) continue;
         backbuffer.drawLine(x1, y1, x2, y2, rwyColor);

@@ -170,6 +170,7 @@ static String htmlEscape(const String& s) {
 }
 
 void ConfigurationWebServer::ApplyDefaults() {
+    Preferences prefs;
     prefs.begin("config", false);
 
     if (prefs.getString("airport", "").isEmpty())
@@ -202,8 +203,10 @@ void ConfigurationWebServer::ApplyDefaults() {
 }
 
 void ConfigurationWebServer::registerRoutes(AsyncWebServer& s) {
-    s.on("/", HTTP_GET, [&](AsyncWebServerRequest* request) {
-        configActiveUntil = millis() + 60000;
+    s.on("/", HTTP_GET, [this](AsyncWebServerRequest* request) {
+        configActive = true;
+        configTouchedAt = millis();
+        Preferences prefs;
         prefs.begin("config", true);
         const String airport         = prefs.getString("airport", "KFHR");
         const String latitude        = prefs.getString("latitude", "");
@@ -254,15 +257,16 @@ void ConfigurationWebServer::registerRoutes(AsyncWebServer& s) {
         request->send(response);
     });
 
-    s.on("/save", HTTP_POST, [&](AsyncWebServerRequest* request) {
-        auto TrySaveParam = [request, this](const char* paramName) {
+    s.on("/save", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        Preferences prefs;
+        prefs.begin("config", false);
+
+        auto TrySaveParam = [request, &prefs](const char* paramName) {
             const auto* param = request->getParam(paramName, true);
             if (param == nullptr) return false;
             prefs.putString(paramName, param->value());
             return true;
         };
-
-        prefs.begin("config", false);
 
         TrySaveParam("airport");
         TrySaveParam("latitude");
@@ -290,7 +294,7 @@ void ConfigurationWebServer::registerRoutes(AsyncWebServer& s) {
 
         request->send(200, "text/html", "Saved - restarting...");
         shouldRestart = true;
-        restartAt = millis() + 500;
+        restartRequestedAt = millis();
     });
 
     s.begin();
@@ -309,6 +313,7 @@ void ConfigurationWebServer::Initialise() {
 
 const String ConfigurationWebServer::GetStoredString(const char* key)
 {
+    Preferences prefs;
     prefs.begin("config", true);
     const String value = prefs.getString(key, "");
     prefs.end();

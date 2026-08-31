@@ -27,7 +27,7 @@
 
 constexpr unsigned long OTA_CHECK_INTERVAL = 24UL * 60 * 60 * 1000;
 constexpr unsigned long WX_FETCH_INTERVAL = 5UL * 60 * 1000;
-constexpr unsigned long CHECKIN_INTERVAL = 60UL * 1000;
+constexpr unsigned long CHECKIN_INTERVAL = 5UL * 60 * 1000;
 
 LGFX tft;
 LGFX_Sprite backbuffer(&tft);
@@ -195,9 +195,13 @@ static void setupStationLists() {
     for (int i = 0; i < 4; i++) tafBotRow[i] = tafStationPtrs[4 + i];
 }
 
+static constexpr int WX_CACHE_SCHEMA = sizeof(WxMetar) * 100 + sizeof(WxTaf);
+
 static void wxCacheSave() {
+    if (wxData.metarCount == 0 && wxData.tafCount == 0) return;
     Preferences prefs;
     prefs.begin("wxcache", false);
+    prefs.putInt("schema", WX_CACHE_SCHEMA);
     prefs.putInt("mc", wxData.metarCount);
     prefs.putInt("tc", wxData.tafCount);
     prefs.putBytes("metars", wxData.metars, sizeof(WxMetar) * wxData.metarCount);
@@ -209,9 +213,18 @@ static void wxCacheSave() {
 static bool wxCacheLoad() {
     Preferences prefs;
     prefs.begin("wxcache", true);
+    if (prefs.getInt("schema", 0) != WX_CACHE_SCHEMA) {
+        Serial.println("[WX] Cache schema mismatch, discarding");
+        prefs.end();
+        return false;
+    }
     int mc = prefs.getInt("mc", 0);
     int tc = prefs.getInt("tc", 0);
-    if (mc <= 0 && tc <= 0) { prefs.end(); return false; }
+    if (mc < 0) mc = 0;
+    if (tc < 0) tc = 0;
+    if (mc > WX_MAX_STATIONS) mc = WX_MAX_STATIONS;
+    if (tc > WX_MAX_STATIONS) tc = WX_MAX_STATIONS;
+    if (mc == 0 && tc == 0) { prefs.end(); return false; }
 
     memset(&wxData, 0, sizeof(wxData));
     wxData.metarCount = mc;
@@ -225,11 +238,16 @@ static bool wxCacheLoad() {
 
 static void fetchWeather() {
     setupStationLists();
+    int prevMetars = wxData.metarCount;
+    int prevTafs = wxData.tafCount;
     wxfetch::fetchAll(wxData, metarIds, tafIds, millis());
     Serial.printf("[WX] Parsed %d METARs, %d TAFs\n", wxData.metarCount, wxData.tafCount);
     for (int i = 0; i < wxData.metarCount; i++)
         Serial.printf("[WX]   %s: %s\n", wxData.metars[i].icao, wxData.metars[i].flightCat);
-    wxCacheSave();
+    if (wxData.metarCount > 0 || wxData.tafCount > 0)
+        wxCacheSave();
+    else if (prevMetars > 0 || prevTafs > 0)
+        Serial.println("[WX] Fetch returned empty, keeping cached data");
     lastWxFetch = millis();
 }
 
@@ -242,13 +260,11 @@ void showOtaStatus(const char* msg)
     tft.drawCentreString(msg, DISPLAY_W / 2, DISPLAY_H / 2);
 }
 
-bool checkHttpOta()
+void checkHttpOta()
 {
     showOtaStatus("Checking for updates...");
     deleteSprite("OTA");
     Serial.printf("[OTA] Checking for update... (heap: %u)\n", ESP.getFreeHeap());
-
-    bool updated = false;
 
     WiFiClientSecure secureClient;
     secureClient.setInsecure();
@@ -289,7 +305,6 @@ bool checkHttpOta()
     }
 
     recreateSprite("OTA");
-    return updated;
 }
 
 // ---- Touch ----
@@ -313,13 +328,13 @@ void handleTouch()
 
     if (displayMode == MODE_METAR_DETAIL) {
         Serial.printf("[TOUCH] METAR screen x=%d y=%d\n", tp.x, tp.y);
-        if (tp.x >= 218 && tp.y >= 198) {
+        if (tp.x >= BTN_FW_UPDATE.x && tp.y >= BTN_FW_UPDATE.y) {
             displayMode = MODE_RADAR;
             checkHttpOta();
             return;
         }
 #ifdef BOARD_FREENOVE_S3
-        if (tp.x >= 156 && tp.x < 212 && tp.y >= 198) {
+        if (tp.x >= BTN_PING.x && tp.x < BTN_PING.x + BTN_PING.w && tp.y >= BTN_PING.y) {
             sonar::ping();
             return;
         }
@@ -378,8 +393,7 @@ void setup()
     sonar::init();
 #endif
 
-    backbuffer.setColorDepth(8);
-    backbuffer.createSprite(DISPLAY_W, DISPLAY_H);
+    recreateSprite("boot");
 
     tft.fillScreen(lgfx::color888(0, 0, 0));
     tft.setTextSize(1.5);
@@ -395,7 +409,11 @@ void setup()
         WiFi.waitForConnectResult();
     }
 
-    wm.autoConnect(WiFiManagerHelpers::WiFiManagerName);
+    if (!wm.autoConnect(WiFiManagerHelpers::WiFiManagerName)) {
+        Serial.println("[WARN] WiFi autoConnect failed, rebooting");
+        delay(2000);
+        ESP.restart();
+    }
 
     configTzTime("PST8PDT,M3.2.0,M11.1.0", "pool.ntp.org");
 
@@ -471,10 +489,10 @@ void loop()
 {
     handleTouch();
 
-    if (configServer.shouldRestart && millis() >= configServer.restartAt)
+    if (configServer.shouldRestart && millis() - configServer.restartRequestedAt >= 500)
         ESP.restart();
 
-    if (millis() < configServer.configActiveUntil) {
+    if (configServer.configActive && millis() - configServer.configTouchedAt < 60000) {
         backbuffer.fillScreen(0);
         backbuffer.setTextSize(1.5);
         backbuffer.setTextColor(lgfx::color888(0, 160, 0));

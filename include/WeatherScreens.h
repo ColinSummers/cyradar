@@ -23,7 +23,8 @@ static void wxDrawMetarDetail(LGFX_Sprite& bb, const WxData& wx,
     bb.fillScreen(0);
 
     const WxMetar* m = wx.findMetar(airportId);
-    if (!m && wx.metarCount > 0) m = &wx.metars[0];
+    bool fallback = false;
+    if (!m && wx.metarCount > 0) { m = &wx.metars[0]; fallback = true; }
     if (!m) return;
 
     uint32_t green = lgfx::color888(0, 200, 0);
@@ -31,7 +32,7 @@ static void wxDrawMetarDetail(LGFX_Sprite& bb, const WxData& wx,
 
     bb.setTextSize(2);
     bb.setTextColor(green);
-    bb.drawString(airportId, 10, 8);
+    bb.drawString(fallback ? m->icao : airportId, 10, 8);
     bb.setTextColor(wxFlightCatColor(m->flightCat));
     bb.drawString(m->flightCat, 110, 8);
 
@@ -107,19 +108,19 @@ static void wxDrawMetarDetail(LGFX_Sprite& bb, const WxData& wx,
         char line1[128];
         strncpy(line1, raw, splitAt); line1[splitAt] = '\0';
         bb.drawString(line1, 10, y); y += 10;
-        bb.drawString(raw + splitAt + 1, 10, y);
+        bb.drawString(raw + splitAt + (raw[splitAt] == ' ' ? 1 : 0), 10, y);
     } else {
         bb.drawString(raw, 10, y);
     }
 
 #ifdef BOARD_FREENOVE_S3
-    bb.drawRect(156, 198, 56, 32, lgfx::color888(0, 100, 0));
+    bb.drawRect(BTN_PING.x, BTN_PING.y, BTN_PING.w, BTN_PING.h, lgfx::color888(0, 100, 0));
     bb.setTextColor(lgfx::color888(0, 160, 0));
-    bb.drawString("Ping", 166, 206);
+    bb.drawString("Ping", BTN_PING.x + 10, BTN_PING.y + 8);
 #endif
-    bb.drawRect(218, 198, 96, 32, lgfx::color888(0, 100, 0));
+    bb.drawRect(BTN_FW_UPDATE.x, BTN_FW_UPDATE.y, BTN_FW_UPDATE.w, BTN_FW_UPDATE.h, lgfx::color888(0, 100, 0));
     bb.setTextColor(lgfx::color888(0, 160, 0));
-    bb.drawString("FW Update", 224, 206);
+    bb.drawString("FW Update", BTN_FW_UPDATE.x + 6, BTN_FW_UPDATE.y + 8);
 
     int ageMin = (int)((nowMs - wx.fetchTime) / 60000);
     snprintf(buf, sizeof(buf), "WX: %d min ago", ageMin);
@@ -133,18 +134,32 @@ static void wxDrawWeatherMap(LGFX_Sprite& bb, const WxData& wx, unsigned long no
 {
     bb.fillScreen(0);
 
-    const float latMin = 47.40f, latMax = 48.90f;
-    const float lonMin = -123.60f, lonMax = -122.10f;
+    if (wx.metarCount == 0) return;
+
+    float latMin = 90, latMax = -90, lonMin = 180, lonMax = -180;
+    for (int i = 0; i < wx.metarCount; i++) {
+        if (wx.metars[i].lat == 0 && wx.metars[i].lon == 0) continue;
+        if (wx.metars[i].lat < latMin) latMin = wx.metars[i].lat;
+        if (wx.metars[i].lat > latMax) latMax = wx.metars[i].lat;
+        if (wx.metars[i].lon < lonMin) lonMin = wx.metars[i].lon;
+        if (wx.metars[i].lon > lonMax) lonMax = wx.metars[i].lon;
+    }
+    float latPad = (latMax - latMin) * 0.15f + 0.05f;
+    float lonPad = (lonMax - lonMin) * 0.15f + 0.05f;
+    latMin -= latPad; latMax += latPad;
+    lonMin -= lonPad; lonMax += lonPad;
+
     const int mapTop = 14, mapBot = DISPLAY_H - 14;
     const int mapLeft = 10, mapRight = DISPLAY_W - 10;
     const int mapW = mapRight - mapLeft;
     const int mapH = mapBot - mapTop;
 
-    for (int i = 0; i < ROUTE_STATION_COUNT; i++) {
-        int sx = mapLeft + (int)((ROUTE_STATIONS[i].lon - lonMin) / (lonMax - lonMin) * mapW);
-        int sy = mapTop + (int)((latMax - ROUTE_STATIONS[i].lat) / (latMax - latMin) * mapH);
+    for (int i = 0; i < wx.metarCount; i++) {
+        if (wx.metars[i].lat == 0 && wx.metars[i].lon == 0) continue;
+        int sx = mapLeft + (int)((wx.metars[i].lon - lonMin) / (lonMax - lonMin) * mapW);
+        int sy = mapTop + (int)((latMax - wx.metars[i].lat) / (latMax - latMin) * mapH);
 
-        uint32_t color = wxFlightCatColor(wx.findMetarCat(ROUTE_STATIONS[i].icao));
+        uint32_t color = wxFlightCatColor(wx.metars[i].flightCat);
         bb.fillCircle(sx, sy, 6, color);
         bb.drawCircle(sx, sy, 7, lgfx::color888(60, 60, 60));
 
@@ -152,7 +167,7 @@ static void wxDrawWeatherMap(LGFX_Sprite& bb, const WxData& wx, unsigned long no
         bb.setTextColor(lgfx::color888(180, 180, 180));
         int labelX = sx + 10, labelY = sy - 4;
         if (labelX + 28 > DISPLAY_W - 4) labelX = sx - 32;
-        bb.drawString(ROUTE_STATIONS[i].icao, labelX, labelY);
+        bb.drawString(wx.metars[i].icao, labelX, labelY);
     }
 
     int ageMin = (int)((nowMs - wx.fetchTime) / 60000);
@@ -239,11 +254,15 @@ static void wxDrawTafMap(LGFX_Sprite& bb, const WxData& wx,
         int cx = xOff + c * colW + colW / 2;
 
         bb.setTextColor(lgfx::color888(0, 160, 0));
-        bb.drawCentreString(topRow[c] + 1, cx, topLabelY);
+        const char* topLabel = topRow[c];
+        if (*topLabel == 'K') topLabel++;
+        bb.drawCentreString(topLabel, cx, topLabelY);
         drawColumn(cx, topRow[c], topDotY0, topDotY1);
 
         bb.setTextColor(lgfx::color888(0, 160, 0));
-        bb.drawCentreString(botRow[c] + 1, cx, botLabelY);
+        const char* botLabel = botRow[c];
+        if (*botLabel == 'K') botLabel++;
+        bb.drawCentreString(botLabel, cx, botLabelY);
         drawColumn(cx, botRow[c], botDotY0, botDotY1);
     }
 

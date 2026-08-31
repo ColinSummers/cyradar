@@ -8,23 +8,23 @@
 
 namespace wxparse {
 
-static const char* findKey(const char* obj, const char* key) {
+static const char* findKey(const char* obj, const char* key, const char* objEnd = nullptr) {
     char needle[64];
     snprintf(needle, sizeof(needle), "\"%s\"", key);
     const char* p = strstr(obj, needle);
     if (!p) return nullptr;
+    if (objEnd && p >= objEnd) return nullptr;
     p += strlen(needle);
     while (*p == ' ' || *p == ':') p++;
     return p;
 }
 
-static void getString(const char* obj, const char* key, char* out, int maxLen) {
+static void getString(const char* obj, const char* key, char* out, int maxLen, const char* objEnd = nullptr) {
     out[0] = '\0';
-    const char* p = findKey(obj, key);
+    const char* p = findKey(obj, key, objEnd);
     if (!p) return;
     if (*p == 'n') return; // null
     if (*p != '"') {
-        // bare value (number/bool)
         int i = 0;
         while (*p && *p != ',' && *p != '}' && *p != ']' && i < maxLen - 1) {
             if (*p != ' ' && *p != '\r' && *p != '\n') out[i++] = *p;
@@ -39,23 +39,23 @@ static void getString(const char* obj, const char* key, char* out, int maxLen) {
     out[i] = '\0';
 }
 
-static float getFloat(const char* obj, const char* key) {
+static float getFloat(const char* obj, const char* key, const char* objEnd = nullptr) {
     char buf[32];
-    getString(obj, key, buf, sizeof(buf));
+    getString(obj, key, buf, sizeof(buf), objEnd);
     if (buf[0] == '\0') return 0.0f;
     return (float)atof(buf);
 }
 
-static int getInt(const char* obj, const char* key) {
+static int getInt(const char* obj, const char* key, const char* objEnd = nullptr) {
     char buf[32];
-    getString(obj, key, buf, sizeof(buf));
+    getString(obj, key, buf, sizeof(buf), objEnd);
     if (buf[0] == '\0') return 0;
     return atoi(buf);
 }
 
-static long getLong(const char* obj, const char* key) {
+static long getLong(const char* obj, const char* key, const char* objEnd = nullptr) {
     char buf[32];
-    getString(obj, key, buf, sizeof(buf));
+    getString(obj, key, buf, sizeof(buf), objEnd);
     if (buf[0] == '\0') return 0;
     return atol(buf);
 }
@@ -70,9 +70,9 @@ static const char* findClosing(const char* p, char open, char close) {
     return nullptr;
 }
 
-// Iterate objects in a JSON array. Returns pointer to '{', sets end to '}'.
+// Iterate objects in a JSON array. Returns pointer to '{', sets *objEnd to '}'.
 // Call with *pos = start of array ('[').
-static const char* nextObject(const char** pos) {
+static const char* nextObject(const char** pos, const char** objEnd = nullptr) {
     const char* p = *pos;
     while (*p && *p != '{') {
         if (*p == ']') return nullptr;
@@ -82,6 +82,7 @@ static const char* nextObject(const char** pos) {
     const char* start = p;
     const char* end = findClosing(p, '{', '}');
     if (!end) return nullptr;
+    if (objEnd) *objEnd = end;
     *pos = end + 1;
     return start;
 }
@@ -163,24 +164,27 @@ static void parseMETARs(const char* json, WxData& wx) {
 
     const char* scan = json + 1;
     const char* obj;
-    while ((obj = nextObject(&scan)) != nullptr && wx.metarCount < WX_MAX_STATIONS) {
+    const char* oEnd;
+    while ((obj = nextObject(&scan, &oEnd)) != nullptr && wx.metarCount < WX_MAX_STATIONS) {
         WxMetar& m = wx.metars[wx.metarCount];
         memset(&m, 0, sizeof(m));
 
-        getString(obj, "icaoId", m.icao, sizeof(m.icao));
-        m.windDir = getInt(obj, "wdir");
-        m.windSpd = getInt(obj, "wspd");
-        m.windGust = getInt(obj, "wgst");
-        m.visibility = getFloat(obj, "visib");
+        getString(obj, "icaoId", m.icao, sizeof(m.icao), oEnd);
+        m.windDir = getInt(obj, "wdir", oEnd);
+        m.windSpd = getInt(obj, "wspd", oEnd);
+        m.windGust = getInt(obj, "wgst", oEnd);
+        m.visibility = getFloat(obj, "visib", oEnd);
         if (m.visibility <= 0) m.visibility = 10.0f;
-        float altHpa = getFloat(obj, "altim");
+        float altHpa = getFloat(obj, "altim", oEnd);
         m.altimeter = (altHpa > 100) ? altHpa / 33.8639f : altHpa;
-        m.tempC = getFloat(obj, "temp");
-        m.dewpC = getFloat(obj, "dewp");
-        getString(obj, "fltCat", m.flightCat, sizeof(m.flightCat));
+        m.tempC = getFloat(obj, "temp", oEnd);
+        m.dewpC = getFloat(obj, "dewp", oEnd);
+        getString(obj, "fltCat", m.flightCat, sizeof(m.flightCat), oEnd);
         if (m.flightCat[0] == '\0') strncpy(m.flightCat, "VFR", sizeof(m.flightCat));
-        getString(obj, "rawOb", m.rawOb, sizeof(m.rawOb));
+        getString(obj, "rawOb", m.rawOb, sizeof(m.rawOb), oEnd);
         buildCloudString(obj, m.sky, sizeof(m.sky));
+        m.lat = getFloat(obj, "lat", oEnd);
+        m.lon = getFloat(obj, "lon", oEnd);
 
         wx.metarCount++;
     }
@@ -193,33 +197,35 @@ static void parseTAFs(const char* json, WxData& wx, const char* stationList) {
     if (json && *json == '[') {
         const char* scan = json + 1;
         const char* obj;
-        while ((obj = nextObject(&scan)) != nullptr && wx.tafCount < WX_MAX_STATIONS) {
+        const char* oEnd;
+        while ((obj = nextObject(&scan, &oEnd)) != nullptr && wx.tafCount < WX_MAX_STATIONS) {
             WxTaf& t = wx.tafs[wx.tafCount];
             memset(&t, 0, sizeof(t));
 
-            getString(obj, "icaoId", t.icao, sizeof(t.icao));
+            getString(obj, "icaoId", t.icao, sizeof(t.icao), oEnd);
 
-            const char* fcstsP = findKey(obj, "fcsts");
+            const char* fcstsP = findKey(obj, "fcsts", oEnd);
             if (fcstsP && *fcstsP == '[') {
                 const char* fcstsEnd = findClosing(fcstsP, '[', ']');
                 const char* pscan = fcstsP + 1;
                 const char* period;
-                while ((period = nextObject(&pscan)) != nullptr &&
+                const char* pEnd;
+                while ((period = nextObject(&pscan, &pEnd)) != nullptr &&
                        pscan <= fcstsEnd &&
                        t.periodCount < WX_MAX_TAF_PERIODS) {
                     WxTafPeriod& tp = t.periods[t.periodCount];
                     memset(&tp, 0, sizeof(tp));
 
-                    long from = getLong(period, "timeFrom");
+                    long from = getLong(period, "timeFrom", pEnd);
                     tp.timeFrom = from;
                     timeLabel(from, tp.label, sizeof(tp.label));
 
                     char change[16];
-                    getString(period, "fcstChange", change, sizeof(change));
+                    getString(period, "fcstChange", change, sizeof(change), pEnd);
                     tp.isTempo = (strcmp(change, "TEMPO") == 0);
 
                     char visStr[16];
-                    getString(period, "visib", visStr, sizeof(visStr));
+                    getString(period, "visib", visStr, sizeof(visStr), pEnd);
                     float vis = 10.0f;
                     if (strcmp(visStr, "6+") == 0 || strcmp(visStr, "P6SM") == 0) vis = 7.0f;
                     else if (visStr[0] != '\0') vis = (float)atof(visStr);

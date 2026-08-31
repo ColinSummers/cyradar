@@ -35,7 +35,8 @@ static void fetchAll(WxData& wx, const char* metarStations, const char* tafStati
 
     buildUrl(url, sizeof(url), "taf", tafStations);
     std::string tafJson = httpfetch::get(url);
-    wxparse::parseTAFs(tafJson.empty() ? "[]" : tafJson.c_str(), wx, tafStations);
+    if (!tafJson.empty())
+        wxparse::parseTAFs(tafJson.c_str(), wx, tafStations);
 
     wx.fetchTime = nowMs;
 }

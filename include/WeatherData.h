@@ -17,6 +17,8 @@ struct WxMetar {
     float altimeter;
     char flightCat[8];
     char rawOb[160];
+    float lat;
+    float lon;
 };
 
 struct WxTafPeriod {

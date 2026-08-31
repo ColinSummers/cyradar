@@ -62,6 +62,33 @@ constexpr NearbyRunway PNW_RUNWAYS[] = {
 };
 constexpr int PNW_RUNWAY_COUNT = sizeof(PNW_RUNWAYS) / sizeof(PNW_RUNWAYS[0]);
 
+// Los Angeles basin regional runways (OurAirports, ODbL)
+constexpr NearbyRunway LA_RUNWAYS[] = {
+    // KFUL (Fullerton)
+    {33.8711f, -117.9848f, 33.8730f, -117.9748f},
+    // KHHR (Hawthorne)
+    {33.9225f, -118.3430f, 33.9232f, -118.3270f},
+    // KLAX (6L/24R)
+    {33.9491f, -118.4312f, 33.9521f, -118.4020f},
+    // KLAX (6R/24L)
+    {33.9468f, -118.4347f, 33.9505f, -118.3991f},
+    // KLAX (7L/25R)
+    {33.9356f, -118.4221f, 33.9399f, -118.3798f},
+    // KLAX (7R/25L)
+    {33.9337f, -118.4191f, 33.9374f, -118.3827f},
+    // KSMO (03/21)
+    {34.0124f, -118.4554f, 34.0193f, -118.4473f},
+    // KTOA (Zamperini/Torrance 11L/29R)
+    {33.8081f, -118.3457f, 33.7995f, -118.3328f},
+    // KTOA (11R/29L)
+    {33.8053f, -118.3441f, 33.8002f, -118.3364f},
+    // KVNY (Van Nuys 16L/34R)
+    {34.2190f, -118.4900f, 34.2080f, -118.4890f},
+    // KVNY (16R/34L)
+    {34.2189f, -118.4913f, 34.1970f, -118.4892f},
+};
+constexpr int LA_RUNWAY_COUNT = sizeof(LA_RUNWAYS) / sizeof(LA_RUNWAYS[0]);
+
 // Weather stations along FHR→BFI route and return-flight outs
 struct MetarStation {
     const char* icao;
