@@ -363,7 +363,7 @@ void drawFrame() {
             snprintf(verBuf, sizeof(verBuf), "v1.3.3  sim");
             wxDrawMetarDetail(backbuffer, wxData, simAirport->id,
                               simAirport->runways, simAirport->numRunways,
-                              verBuf, millis());
+                              verBuf, "127.0.0.1", millis());
             backbuffer.pushSprite(0, 0);
             break;
         }

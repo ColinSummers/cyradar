@@ -158,19 +158,54 @@ static void recordCrashIfAny() {
     prefs.end();
 }
 
+static void setOtaState(const char* state, int pct = -1)
+{
+    Preferences prefs;
+    prefs.begin("otalog", false);
+    prefs.putString("state", state);
+    prefs.putInt("pct", pct);
+    prefs.putULong("at", millis() / 1000);
+    prefs.end();
+}
+
+static void clearOtaState()
+{
+    Preferences prefs;
+    prefs.begin("otalog", false);
+    prefs.putString("state", "");
+    prefs.end();
+}
+
+static String getStaleOtaState()
+{
+    Preferences prefs;
+    prefs.begin("otalog", true);
+    String state = prefs.getString("state", "");
+    int pct = prefs.getInt("pct", -1);
+    unsigned long at = prefs.getULong("at", 0);
+    prefs.end();
+    if (state.isEmpty()) return "";
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%s@%d%%/%lus", state.c_str(), pct, at);
+    return String(buf);
+}
+
 static void checkin(const char* event = "heartbeat") {
     String airport = configServer.GetStoredString("airport");
     String user = configServer.GetStoredString("opensky-id");
     if (airport.isEmpty()) airport = "KFHR";
     if (user.isEmpty()) user = WiFi.macAddress();
 
-    char url[512];
+    String otaState = getStaleOtaState();
+
+    char url[640];
     snprintf(url, sizeof(url),
-             "https://george.pogsummers.com/cyradar/checkin?v=%s&airport=%s&user=%s&event=%s&reason=%s&heap=%u&largest=%u&crashes=%d&up=%lu&spritefails=%d",
+             "https://george.pogsummers.com/cyradar/checkin?v=%s&airport=%s&user=%s&event=%s&reason=%s&heap=%u&largest=%u&crashes=%d&up=%lu&spritefails=%d&ota=%s",
              FW_VERSION, airport.c_str(), user.c_str(),
              event, resetReasonStr(), ESP.getFreeHeap(),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
-             crashCount, millis() / 1000, spriteFailCount);
+             crashCount, millis() / 1000, spriteFailCount,
+             otaState.isEmpty() ? "none" : otaState.c_str());
     Serial.printf("[CHECKIN] %s\n", url);
     httpfetch::get(url);
 }
@@ -286,6 +321,17 @@ void checkHttpOta()
 
         if (remoteVersion != FW_VERSION) {
             showOtaStatus("Updating firmware...");
+            checkin("ota_start");
+            setOtaState("downloading");
+
+            httpUpdate.onProgress([](int cur, int total) {
+                int pct = total > 0 ? (cur * 100) / total : 0;
+                Serial.printf("[OTA] Progress: %d/%d (%d%%)\n", cur, total, pct);
+                setOtaState("downloading", pct);
+                char buf[32];
+                snprintf(buf, sizeof(buf), "Updating... %d%%", pct);
+                showOtaStatus(buf);
+            });
 
             WiFiClientSecure transport;
             transport.setInsecure();
@@ -293,10 +339,14 @@ void checkHttpOta()
             t_httpUpdate_return ret = httpUpdate.update(transport, FW_BINARY_URL);
 
             if (ret == HTTP_UPDATE_OK) {
+                clearOtaState();
                 Serial.println("[OTA] Update success, rebooting");
                 ESP.restart();
             } else if (ret == HTTP_UPDATE_FAILED) {
                 Serial.printf("[OTA] Update failed: %s\n", httpUpdate.getLastErrorString().c_str());
+                setOtaState("failed");
+                checkin("ota_fail");
+                clearOtaState();
             }
         }
     } else {
@@ -457,6 +507,8 @@ void setup()
         recreateSprite("boot-fresh");
     }
 
+    clearOtaState();
+
     lastOtaCheck = millis();
     lastCheckin = millis();
 }
@@ -536,7 +588,8 @@ void loop()
             wxDrawMetarDetail(backbuffer, wxData,
                 aircraftManager.GetAirportId().c_str(),
                 rwys.data(), (int)rwys.size(),
-                verBuf, millis());
+                verBuf, WiFi.localIP().toString().c_str(),
+                millis());
             break;
         }
         case MODE_WEATHER_MAP:

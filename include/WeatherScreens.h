@@ -18,7 +18,8 @@ static uint32_t wxFlightCatColor(const char* cat) {
 static void wxDrawMetarDetail(LGFX_Sprite& bb, const WxData& wx,
                               const char* airportId,
                               const RunwayInfo* runways, int runwayCount,
-                              const char* versionStr, unsigned long nowMs)
+                              const char* versionStr, const char* ipStr,
+                              unsigned long nowMs)
 {
     bb.fillScreen(0);
 
@@ -125,7 +126,9 @@ static void wxDrawMetarDetail(LGFX_Sprite& bb, const WxData& wx,
     int ageMin = (int)((nowMs - wx.fetchTime) / 60000);
     snprintf(buf, sizeof(buf), "WX: %d min ago", ageMin);
     bb.setTextColor(lgfx::color888(0, 80, 0));
-    bb.drawString(buf, 4, DISPLAY_H - 22);
+    bb.drawString(buf, 4, DISPLAY_H - 34);
+    bb.setTextColor(lgfx::color888(0, 180, 0));
+    bb.drawString(ipStr, 4, DISPLAY_H - 22);
     bb.setTextColor(lgfx::color888(0, 120, 0));
     bb.drawString(versionStr, 4, DISPLAY_H - 10);
 }
