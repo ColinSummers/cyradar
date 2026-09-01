@@ -5,6 +5,7 @@
 #include <WiFiClientSecure.h>
 #include <esp_system.h>
 #include <esp_heap_caps.h>
+#include <nvs_flash.h>
 
 #include <Preferences.h>
 
@@ -113,12 +114,28 @@ static bool isCrashReason(esp_reset_reason_t r) {
 }
 
 static int crashCount = 0;
+static bool nvsCorrupted = false;
 
 static void saveUptime() {
     Preferences prefs;
     prefs.begin("crashlog", false);
     prefs.putULong("uptime", millis() / 1000);
     prefs.end();
+}
+
+static void checkNvsHealth() {
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        Serial.printf("[NVS] Corrupted (err=0x%x), erasing and reinitializing\n", err);
+        nvsCorrupted = true;
+        nvs_flash_erase();
+        nvs_flash_init();
+    } else if (err != ESP_OK) {
+        Serial.printf("[NVS] Init error: 0x%x\n", err);
+        nvsCorrupted = true;
+    } else {
+        Serial.println("[NVS] OK");
+    }
 }
 
 static void recordCrashIfAny() {
@@ -200,12 +217,13 @@ static void checkin(const char* event = "heartbeat") {
 
     char url[640];
     snprintf(url, sizeof(url),
-             "https://george.pogsummers.com/cyradar/checkin?v=%s&airport=%s&user=%s&event=%s&reason=%s&heap=%u&largest=%u&crashes=%d&up=%lu&spritefails=%d&ota=%s",
+             "https://george.pogsummers.com/cyradar/checkin?v=%s&airport=%s&user=%s&event=%s&reason=%s&heap=%u&largest=%u&crashes=%d&up=%lu&spritefails=%d&ota=%s&nvs=%s",
              FW_VERSION, airport.c_str(), user.c_str(),
              event, resetReasonStr(), ESP.getFreeHeap(),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
              crashCount, millis() / 1000, spriteFailCount,
-             otaState.isEmpty() ? "none" : otaState.c_str());
+             otaState.isEmpty() ? "none" : otaState.c_str(),
+             nvsCorrupted ? "corrupted" : "ok");
     Serial.printf("[CHECKIN] %s\n", url);
     httpfetch::get(url);
 }
@@ -434,6 +452,7 @@ void handleTouch()
 void setup()
 {
     Serial.begin(115200);
+    checkNvsHealth();
     recordCrashIfAny();
 
     tft.init();
