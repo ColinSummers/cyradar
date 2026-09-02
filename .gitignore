@@ -3,4 +3,5 @@
 .DS_Store
 include/Config.h
 opensky-credentials.json
+radar.env
 sim/build/
