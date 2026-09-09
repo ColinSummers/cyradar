@@ -473,9 +473,17 @@ void setup()
 
     WiFiManagerHelpers::ConfigureWiFiManager(wm, tft);
 
+    // Compiled-in credentials are a convenience for freshly flashed boards only.
+    // WiFi.begin() persists whatever SSID it is given, so calling it unconditionally
+    // would overwrite credentials the owner entered through the captive portal on
+    // every boot (v1.3.7 and earlier did exactly that).
     if (strlen(WIFI_SSID) > 0) {
-        WiFi.begin(WIFI_SSID, WIFI_PASS);
-        WiFi.waitForConnectResult();
+        WiFi.mode(WIFI_STA);
+        if (wm.getWiFiSSID(true).isEmpty()) {
+            Serial.println("[WIFI] No stored credentials, trying compiled-in SSID");
+            WiFi.begin(WIFI_SSID, WIFI_PASS);
+            WiFi.waitForConnectResult();
+        }
     }
 
     if (!wm.autoConnect(WiFiManagerHelpers::WiFiManagerName)) {
