@@ -2,10 +2,11 @@
 
 #include <LovyanGFX.hpp>
 
-// CYD ESP32-2432S028R — ILI9341 320×240, HSPI bus
+// CYD TPN408-2.8 — appears to use ST7789 (not ILI9341) despite being
+// sold as a standard CYD.  Same HSPI bus and pin layout.
 class LGFX : public lgfx::LGFX_Device
 {
-    lgfx::Panel_ILI9341 _panel;
+    lgfx::Panel_ST7789 _panel;
     lgfx::Bus_SPI _bus;
     lgfx::Light_PWM _light;
     lgfx::Touch_XPT2046 _touch;

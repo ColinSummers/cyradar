@@ -386,7 +386,7 @@ void handleTouch()
     lastTouchTime = now;
 
 #if defined(BOARD_CYD)
-    tp.x = DISPLAY_W - 1 - tp.x;
+    tp.y = DISPLAY_H - 1 - tp.y;
 #elif defined(BOARD_CCYD)
     tp.y = DISPLAY_H - 1 - tp.y;
 #elif defined(BOARD_FREENOVE_S3)
