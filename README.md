@@ -1,5 +1,7 @@
 # CYRadar
 
+![CYRadar on a desk, showing the radar scope tracking a flight near KSMO](radar.jpeg)
+
 Cheap Yellow Radar — a desk-sized flight radar for the [Cheap Yellow Display](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display) (ESP32-2432S028R).
 
 Based on [micro-radar](https://github.com/AnthonySturdy/micro-radar) by Anthony Sturdy, adapted for the CYD's ILI9341 320×240 display with weather overlays and configurable airport support.
